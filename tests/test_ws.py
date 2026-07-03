@@ -25,7 +25,13 @@ def client(tmp_path, fakes):
 
 def hello(ws, credential="cred-1", session_id=None) -> dict:
     ws.send_text(Hello(credential=credential, session_id=session_id).model_dump_json())
-    return json.loads(ws.receive_text())
+    first = json.loads(ws.receive_text())
+    if first["type"] != "ready":
+        return first  # error path; no sessions push follows
+    sessions = json.loads(ws.receive_text())  # pushed right after Ready
+    assert sessions["type"] == "sessions"
+    assert first["session_id"] in [s["id"] for s in sessions["sessions"]]
+    return first
 
 
 def run_turn(ws, text: str) -> tuple[list[dict], bytes]:
@@ -125,6 +131,8 @@ def test_switch_session(client, fakes):
         ws.send_text(SwitchSession(session_id=other).model_dump_json())
         ready = json.loads(ws.receive_text())
         assert ready["type"] == "ready" and ready["session_id"] == other
+        sessions = json.loads(ws.receive_text())  # sessions re-pushed after switch
+        assert sessions["type"] == "sessions"
         assert other != first
         assert fakes.pipelines[0].closed  # old session's pipeline was torn down
 

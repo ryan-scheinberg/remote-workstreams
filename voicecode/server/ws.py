@@ -71,6 +71,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         await conn.close_with_error("unknown session")
         return
     await conn.send_message(protocol.Ready(session_id=runtime.session_id))
+    await conn.send_message(protocol.Sessions(sessions=store.list_sessions()))
 
     try:
         while True:
@@ -139,6 +140,7 @@ async def _handle(
         await manager.detach(runtime)
         runtime = await manager.attach(msg.session_id, conn)
         await conn.send_message(protocol.Ready(session_id=runtime.session_id))
+        await conn.send_message(protocol.Sessions(sessions=store.list_sessions()))
     else:  # a second Hello mid-connection
         await conn.send_message(protocol.Error(message="already connected"))
     return runtime

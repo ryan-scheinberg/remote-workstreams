@@ -18,7 +18,7 @@ UV="$(command -v uv)"
 (cd "$REPO" && uv sync)
 echo "deps=synced"
 
-mkdir -p "$HOME/Library/LaunchAgents"
+mkdir -p "$HOME/Library/LaunchAgents" "$HOME/.voicecode/logs"  # launchd won't create log dirs
 sed -e "s|__UV__|$UV|g" -e "s|__REPO__|$REPO|g" -e "s|__HOME__|$HOME|g" "$TEMPLATE" > "$PLIST"
 echo "plist=$PLIST"
 
