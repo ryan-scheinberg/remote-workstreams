@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>voice-code</title>
+  <meta name="theme-color" content="#0a0c0f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="voice-code">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="app">
+  <header id="topbar">
+    <div id="conn" aria-live="polite">
+      <span id="conn-dot" class="offline"></span>
+      <span id="conn-label">offline</span>
+    </div>
+    <button id="btn-session" type="button">
+      <span id="session-title">sessions</span>
+      <svg viewBox="0 0 12 8" width="10" height="7" aria-hidden="true"><path d="M1 1.5 6 6.5 11 1.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+    </button>
+  </header>
+
+  <section id="stage">
+    <div id="orb" class="orb" data-state="offline">
+      <div class="orb-halo"></div>
+      <div class="orb-ring ring-a"></div>
+      <div class="orb-ring ring-b"></div>
+      <div class="orb-core"></div>
+    </div>
+    <p id="state-label">offline</p>
+    <p id="mute-chip" hidden>muted &mdash; proactive speech held</p>
+  </section>
+
+  <section id="transcript" aria-live="polite">
+    <p id="transcript-empty">Say something. The agent is listening.</p>
+  </section>
+
+  <div id="composer" hidden>
+    <input id="composer-input" type="text" placeholder="Type to the agent&hellip;"
+           autocomplete="off" autocapitalize="sentences" enterkeyhint="send">
+    <button id="composer-send" type="button" aria-label="Send">
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </div>
+
+  <footer id="dock">
+    <button id="btn-viewer" type="button" aria-label="Workspace viewer">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="3" y="4" width="18" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M7 10l3 2.5L7 15M12.5 15.5H17" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span id="viewer-badge" hidden>0</span>
+    </button>
+    <button id="btn-mute" type="button" aria-label="Mute" aria-pressed="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        <line class="mute-slash" x1="4.5" y1="4.5" x2="19.5" y2="19.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+      </svg>
+    </button>
+    <button id="btn-keyboard" type="button" aria-label="Type instead" aria-pressed="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="2.5" y="7" width="19" height="11" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M6 10.5h.01M10 10.5h.01M14 10.5h.01M18 10.5h.01M6 14.5h.01M18 14.5h.01M9 14.5h6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+    </button>
+  </footer>
+</div>
+
+<div id="backdrop"></div>
+
+<section id="sheet-viewer" class="sheet" aria-label="Workspace viewer">
+  <div class="sheet-grip"></div>
+  <header><h2>workspace</h2><button class="sheet-close" type="button" aria-label="Close">&#x2715;</button></header>
+  <div id="event-feed" class="sheet-body">
+    <p class="sheet-empty">No activity yet. Execution events land here.</p>
+  </div>
+</section>
+
+<section id="sheet-sessions" class="sheet" aria-label="Sessions">
+  <div class="sheet-grip"></div>
+  <header><h2>sessions</h2><button class="sheet-close" type="button" aria-label="Close">&#x2715;</button></header>
+  <div id="session-list" class="sheet-body">
+    <p class="sheet-empty">No sessions reported yet.</p>
+  </div>
+  <footer class="sheet-foot">
+    <button id="btn-unpair" type="button">Reset pairing&hellip;</button>
+  </footer>
+</section>
+
+<div id="toast" hidden></div>
+
+<section id="screen-start" class="screen" hidden>
+  <p class="wordmark">voice<span>-</span>code</p>
+  <div class="orb mini" data-state="listening" aria-hidden="true">
+    <div class="orb-halo"></div>
+    <div class="orb-ring ring-a"></div>
+    <div class="orb-core"></div>
+  </div>
+  <p class="start-hint">tap anywhere to begin</p>
+</section>
+
+<section id="screen-pairing" class="screen" hidden>
+  <form id="pair-form" autocomplete="off">
+    <p class="wordmark">voice<span>-</span>code</p>
+    <h1>Pair this device</h1>
+    <p class="pair-copy">Enter the pairing token and PIN shown on your Mac, then confirm with Face&nbsp;ID.</p>
+    <label for="pair-token">pairing token</label>
+    <input id="pair-token" type="text" required autocapitalize="off" autocorrect="off" spellcheck="false">
+    <label for="pair-pin">pin</label>
+    <input id="pair-pin" type="text" class="pin" required inputmode="numeric" pattern="[0-9]{4}" maxlength="4" placeholder="&#x2022;&#x2022;&#x2022;&#x2022;">
+    <button id="pair-submit" type="submit">Continue with Face&nbsp;ID</button>
+    <p id="pair-error" hidden></p>
+  </form>
+</section>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
