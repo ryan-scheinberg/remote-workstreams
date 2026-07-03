@@ -1,0 +1,15 @@
+{
+  "name": "voice-code",
+  "owner": { "name": "Ryan Scheinberg", "url": "https://github.com/ryan-scheinberg" },
+  "plugins": [
+    {
+      "name": "voice-code",
+      "source": "./plugins/claude-code",
+      "displayName": "voice-code",
+      "description": "Voice interface for Claude Code — hold a natural spoken conversation with your coding assistant while it does real agentic work. Mac is the brain, iPhone is a thin terminal, Tailscale is the wire.",
+      "category": "Developer Tools",
+      "tags": ["voice", "claude-code", "tailscale", "speech", "assistant", "self-hosted"],
+      "keywords": ["voice", "claude-code", "tailscale", "speech", "assistant", "self-hosted"]
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "name": "voice-code",
+  "displayName": "voice-code",
+  "description": "Voice interface for Claude Code on your own Mac + tailnet.",
+  "version": "0.1.0",
+  "author": { "name": "Ryan Scheinberg" },
+  "repository": "https://github.com/ryan-scheinberg/voice-code",
+  "license": "GPL-3.0-only",
+  "keywords": ["voice", "claude-code", "tailscale", "speech", "assistant", "self-hosted"]
+}
