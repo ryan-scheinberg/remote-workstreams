@@ -5,7 +5,7 @@ Voice interface for Claude Code: Mac runs everything (FastAPI service, dual-laye
 ## State
 
 - Brief written 2026-07-02; all v1 decisions locked (see brief).
-- First implementation pass merged 2026-07-02: foundation contracts plus all six units (engine, execution adapter, audio pipeline, server, PWA, deploy plugin) built in parallel and assembled. 208 tests green, ruff clean, bridge evals 6/6 mocked.
+- First implementation pass merged 2026-07-02: foundation contracts plus all six units (engine, execution adapter, audio pipeline, server, PWA, deploy plugin) built in parallel and assembled. 218 tests green (incl. real-engine+real-pipeline integration tests adopted from QA), ruff clean, bridge evals 6/6 mocked.
 - NOT yet done: any live-API run (bridge evals `--live`, roundtrip, real Deepgram/Cartesia traffic), a real deploy (Tailscale still not installed), device testing on an iPhone. Cartesia account doesn't exist yet.
 - GitHub remote not created yet; intended home is `github.com/ryan-scheinberg/voice-code`, GPLv3. Everything stays local until Ryan says otherwise.
 
