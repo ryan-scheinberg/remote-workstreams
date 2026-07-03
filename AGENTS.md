@@ -58,6 +58,7 @@ tests/                     pytest; mirror module names
 - Python 3.12/3.13 via uv (not 3.14), FastAPI.
 - TTS behind an adapter, Cartesia default. STT is Deepgram streaming.
 - Codex: interface only in v1.
+- Dispatch (decided 2026-07-02, orchestrator call — flag to Ryan if evals show Haiku missing it): the conversation agent requests execution work by embedding `<dispatch>concise directive</dispatch>` at the end of its raw reply — a prompt convention, not a tool. The engine strips it from spoken chunks and exposes it via `take_dispatch()`; the composition root routes it to the ExecutionAdapter (start() on first dispatch, send() thereafter).
 
 ## Gotchas already known
 

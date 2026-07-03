@@ -9,6 +9,10 @@ Non-negotiables (see PROJECT_BRIEF.md):
 - Status events inject as a <system-reminder> block inside the next user turn.
 - Coherence rule: speak only to events actually received; defer naturally on
   in-flight work; never fabricate results.
+- Dispatch: the agent asks for execution work by embedding
+  <dispatch>concise directive</dispatch> at the end of its raw reply (prompt
+  convention — no tools). The engine strips it from spoken chunks and exposes
+  it via take_dispatch().
 """
 
 from __future__ import annotations
@@ -38,6 +42,11 @@ class ConversationEngine:
     def proactive_turn(self) -> AsyncIterator[str]:
         """Unsolicited speech for queued completed/needs_approval events while the
         user is silent. Yields nothing when there is nothing worth saying."""
+        raise NotImplementedError
+
+    def take_dispatch(self) -> str | None:
+        """Directive the last turn asked to send to the execution layer, if any.
+        Returns it once and clears it; the caller routes it to the ExecutionAdapter."""
         raise NotImplementedError
 
     def export_messages(self) -> list[dict[str, Any]]:

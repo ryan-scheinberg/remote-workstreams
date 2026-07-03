@@ -10,7 +10,7 @@ lives inside this module.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Literal, Protocol
 
 from voicecode.adapters.stt import STTAdapter
@@ -39,11 +39,13 @@ class AudioPipeline:
         tts: TTSAdapter,
         engine: ConversationEngine,
         sink: AudioSink,
+        on_dispatch: Callable[[str], Awaitable[None]] | None = None,
     ) -> None:
         self.stt = stt
         self.tts = tts
         self.engine = engine
         self.sink = sink
+        self.on_dispatch = on_dispatch  # after each turn, engine.take_dispatch() routes here
         self.state = PipelineState.LISTENING
         self.muted = False
 
