@@ -19,7 +19,7 @@ UV="$(command -v uv)"
 echo "deps=synced"
 
 mkdir -p "$HOME/Library/LaunchAgents" "$HOME/.voicecode/logs"  # launchd won't create log dirs
-sed -e "s|__UV__|$UV|g" -e "s|__REPO__|$REPO|g" -e "s|__HOME__|$HOME|g" "$TEMPLATE" > "$PLIST"
+sed -e "s|__UV__|$UV|g" -e "s|__REPO__|$REPO|g" -e "s|__HOME__|$HOME|g" -e "s|__PORT__|$PORT|g" "$TEMPLATE" > "$PLIST"
 echo "plist=$PLIST"
 
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true

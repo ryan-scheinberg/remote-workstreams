@@ -89,12 +89,10 @@ class FakeEngine:
         self,
         replies: list[list[str]] | None = None,
         dispatch_after_turn: str | None = None,
-        dispatch_early: str | None = None,
         first_turn_gate: asyncio.Event | None = None,
     ) -> None:
         self.replies = replies if replies is not None else [["Sure thing."]]
         self.dispatch_after_turn = dispatch_after_turn
-        self.dispatch_early = dispatch_early
         self.first_turn_gate = first_turn_gate
         self.turns: list[str] = []
         self.injected: list = []
@@ -108,8 +106,6 @@ class FakeEngine:
 
     async def turn(self, user_text: str):
         self.turns.append(user_text)
-        if self.dispatch_early:
-            self.dispatch = self.dispatch_early
         index = min(len(self.turns) - 1, len(self.replies) - 1)
         try:
             if self.first_turn_gate is not None and len(self.turns) == 1:
@@ -335,6 +331,23 @@ async def test_muted_queues_proactive_until_unmute() -> None:
     await pipeline.close()
 
 
+async def test_rapid_double_unmute_fires_proactive_once() -> None:
+    engine = FakeEngine()
+    engine.proactive_replies = [["All done."]]
+    pipeline, _, _, _, sink = build(engine=engine)
+
+    pipeline.set_muted(True)
+    await pipeline.on_events([Completed(summary="All done.")])
+    pipeline.set_muted(False)
+    pipeline.set_muted(False)  # second rapid unmute must not spawn a turn that aborts the first
+
+    await wait_for(lambda: sink.speech_ends == 1)
+    await asyncio.sleep(0.02)
+    assert engine.proactive_calls == 1
+    assert ("assistant", "All done.", True) in sink.transcripts
+    await pipeline.close()
+
+
 async def test_proactive_with_nothing_to_say_returns_to_listening() -> None:
     pipeline, _, _, engine, sink = build()  # proactive_replies empty → yields nothing
     await pipeline.on_events([Completed(summary="Quiet finish.")])
@@ -377,13 +390,15 @@ async def test_dispatch_routed_after_turn() -> None:
     await pipeline.close()
 
 
-async def test_dispatch_dropped_on_barge_in() -> None:
+async def test_mid_stream_barge_in_has_no_dispatch() -> None:
+    # The real engine sets its dispatch only when turn() runs to exhaustion, so a
+    # reply interrupted mid-stream hands nothing off — and nothing leaks forward.
     dispatches: list[str] = []
 
     async def on_dispatch(directive: str) -> None:
         dispatches.append(directive)
 
-    engine = FakeEngine(replies=[["A.", "B."], ["Fine."]], dispatch_early="stale directive")
+    engine = FakeEngine(replies=[["A.", "B."], ["Fine."]], dispatch_after_turn="directive")
     tts = FakeTTS(hold_first=True)
     pipeline, stt, _, _, sink = build(engine=engine, tts=tts, on_dispatch=on_dispatch)
     task = asyncio.create_task(pipeline.run())
@@ -393,8 +408,48 @@ async def test_dispatch_dropped_on_barge_in() -> None:
     stt.push(chunk("no wait"))  # barge-in before the turn completes
     await wait_for(lambda: INTERRUPTED in sink.states)
 
+    assert engine.closed_mid_turn
     assert dispatches == []
-    assert engine.dispatch is None  # drained, not left to leak into the next turn
+    assert engine.dispatch is None  # never set: the turn didn't reach exhaustion
+
+    await pipeline.close()
+    await asyncio.wait_for(task, 1)
+
+
+class HoldingSpeechEndSink(RecordingSink):
+    """Parks speech_end, simulating playback still draining after the reply streamed."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.speech_end_reached = asyncio.Event()
+
+    async def speech_end(self) -> None:
+        self.speech_end_reached.set()
+        await asyncio.Event().wait()  # hold until cancelled
+
+
+async def test_dispatch_routes_when_barge_in_hits_after_stream_end() -> None:
+    # Once the reply fully streams, it is committed to history dispatch tag and all;
+    # a barge-in during the playback tail must still route the handoff, or the model
+    # would remember delegating work that never started.
+    dispatches: list[str] = []
+
+    async def on_dispatch(directive: str) -> None:
+        dispatches.append(directive)
+
+    stt = ScriptedSTT()
+    engine = FakeEngine(replies=[["On it."]], dispatch_after_turn="run the tests")
+    sink = HoldingSpeechEndSink()
+    pipeline = AudioPipeline(stt, FakeTTS(), engine, sink, on_dispatch=on_dispatch)
+    task = asyncio.create_task(pipeline.run())
+
+    stt.push(chunk("kick it off", is_final=True, speech_final=True))
+    await sink.speech_end_reached.wait()  # reply fully streamed, playback draining
+    stt.push(chunk("actually wait"))  # late barge-in
+    await wait_for(lambda: INTERRUPTED in sink.states)
+
+    assert dispatches == ["run the tests"]
+    assert engine.dispatch is None
 
     await pipeline.close()
     await asyncio.wait_for(task, 1)

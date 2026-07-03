@@ -12,9 +12,10 @@ Turn/interruption policy:
   closed. The engine owns its message list: we accept whatever reply text the engine
   recorded when its generator closed; the pipeline never appends text itself, so
   nothing is ever appended twice.
-- A dispatch directive from an interrupted turn is drained via take_dispatch() and
-  dropped: the user cut the reply off before its request for execution work reached
-  their ears.
+- A reply interrupted mid-stream records nothing, so it has no dispatch. Once the
+  reply has fully streamed it is committed to history, dispatch tag included — its
+  handoff is routed even if playback is barged into afterward, so history never
+  claims a handoff that didn't happen.
 - User speech that endpoints while a turn is still THINKING supersedes it: the
   in-flight turn is cancelled and a fresh turn runs with the new text.
 - Proactive-worthy events (completed/needs_approval) arriving while muted or mid-turn
@@ -164,6 +165,7 @@ class AudioPipeline:
             and self._sm.state is PipelineState.LISTENING
             and not self._closed
         ):
+            self._pending_proactive = False  # claim it now: a rapid second unmute must not double-fire
             self._unmute_task = asyncio.create_task(self._start_proactive())
 
     async def close(self) -> None:
@@ -269,6 +271,10 @@ class AudioPipeline:
             timings.interrupted = True
             await _aclose(tts_stream)
             await _aclose(chunks)
+            # A fully-streamed reply is already committed to history, dispatch tag
+            # included — route its handoff even when playback was barged into.
+            # Mid-stream aborts recorded nothing, so there is no dispatch to route.
+            await self._route_dispatch()
             raise
         except Exception:
             logger.exception("turn failed")
@@ -299,4 +305,3 @@ class AudioPipeline:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
         await self.tts.cancel()
-        self.engine.take_dispatch()  # drop any unrouted directive from the aborted turn
