@@ -26,6 +26,7 @@ class ConvoBridge:
         self._tail = TranscriptTail(session.transcript)
         self._subscribers: set[asyncio.Queue[Entry | None]] = set()
         self._turn_queue: asyncio.Queue[Entry | None] | None = None
+        self._unfinished = 0  # turns sent whose TurnEnd hasn't been seen yet
         self._closed = False
 
     async def run(self) -> None:
@@ -36,6 +37,8 @@ class ConvoBridge:
                     queue.put_nowait(entry)
                 if self._turn_queue is not None:
                     self._turn_queue.put_nowait(entry)
+                if isinstance(entry, TurnEnd):
+                    self._unfinished = max(0, self._unfinished - 1)
             await asyncio.sleep(self._poll)
 
     def subscribe(self) -> AsyncIterator[Entry]:
@@ -66,23 +69,33 @@ class ConvoBridge:
         """Send text, then stream TTS-ready sentence chunks until TurnEnd.
 
         Only one turn is active at a time: starting a new one detaches the old
-        stream, which ends quietly. Tool/user entries are skipped here but still
-        reach subscribers. Text blocks arrive complete, so each is chunked and
-        flushed on its own — nothing is ever pending across blocks.
+        stream, which ends quietly. Input sent mid-turn queues in the session, so
+        a superseded turn's remaining blocks and TurnEnd still land first — the
+        new stream skips them (chat still gets them via subscribers) and speaks
+        only its own reply. Tool/user entries are skipped here but still reach
+        subscribers. Text blocks arrive complete, so each is chunked and flushed
+        on its own — nothing is ever pending across blocks.
         """
         queue: asyncio.Queue[Entry | None] = asyncio.Queue()
         if self._turn_queue is not None:
             self._turn_queue.put_nowait(None)  # detach the superseded stream
         self._turn_queue = queue
+        skip = self._unfinished  # superseded turns still owed a TurnEnd
 
         async def sentences() -> AsyncIterator[str]:
             await self.send(text)
+            self._unfinished += 1
+            nonlocal skip
             try:
                 while True:
                     entry = await queue.get()
-                    if entry is None or isinstance(entry, TurnEnd):
+                    if entry is None:
                         return
-                    if isinstance(entry, AssistantText):
+                    if isinstance(entry, TurnEnd):
+                        if skip == 0:
+                            return
+                        skip -= 1
+                    elif isinstance(entry, AssistantText) and skip == 0:
                         chunker = SentenceChunker()
                         for sentence in chunker.feed(entry.text):
                             yield sentence

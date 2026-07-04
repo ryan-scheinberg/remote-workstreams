@@ -148,6 +148,8 @@ async def test_tool_activity_skipped_by_turn_but_fanned_out(tmp_path: Path) -> N
 
 
 async def test_new_turn_detaches_old_stream(tmp_path: Path) -> None:
+    """Mid-turn input queues in the session (Milestone-0), so the superseded turn's
+    reply and TurnEnd land first; the new stream skips them and speaks only its own."""
     bridge, substrate, transcript = build(tmp_path)
     run = asyncio.create_task(bridge.run())
     old_sentences: list[str] = []
@@ -158,6 +160,7 @@ async def test_new_turn_detaches_old_stream(tmp_path: Path) -> None:
     new_turn = asyncio.create_task(collect(bridge.turn("second ask"), new_sentences))
     await asyncio.wait_for(old_turn, 1)  # old stream ends quietly
 
+    append(transcript, assistant_line("Answering the first ask, superseded."), turn_end_line())
     append(transcript, assistant_line("Answering the second ask only."), turn_end_line())
     await asyncio.wait_for(new_turn, 1)
 
@@ -165,6 +168,29 @@ async def test_new_turn_detaches_old_stream(tmp_path: Path) -> None:
     assert old_sentences == []
     assert new_sentences == ["Answering the second ask only."]
 
+    await bridge.close()
+    await asyncio.wait_for(run, 1)
+
+
+async def test_turn_after_barge_in_skips_leftovers_of_interrupted_turn(tmp_path: Path) -> None:
+    """Barge-in aborts the stream but the session keeps writing turn 1; the next
+    turn must survive turn 1's leftover blocks and TurnEnd and speak only reply 2."""
+    bridge, substrate, transcript = build(tmp_path)
+    run = asyncio.create_task(bridge.run())
+
+    stream = bridge.turn("start the demo")
+    append(transcript, assistant_line("A long reply that gets interrupted mid-speech."))
+    assert await anext(stream) == "A long reply that gets interrupted mid-speech."
+    await stream.aclose()  # barge-in
+
+    sentences: list[str] = []
+    turn = asyncio.create_task(collect(bridge.turn("wait stop that"), sentences))
+    await wait_for(lambda: substrate.sent == ["start the demo", "wait stop that"])
+    append(transcript, assistant_line("Leftover tail of the interrupted reply."), turn_end_line())
+    append(transcript, assistant_line("Okay, switching gears."), turn_end_line())
+    await asyncio.wait_for(turn, 1)
+
+    assert sentences == ["Okay, switching gears."]
     await bridge.close()
     await asyncio.wait_for(run, 1)
 

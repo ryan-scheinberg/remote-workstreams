@@ -230,8 +230,9 @@ class WorkstreamManager:
     async def _await_file(self, path: Path) -> str | None:
         deadline = time.monotonic() + self._poll_budget
         while True:
-            if path.exists():
-                return path.read_text()
+            # The file can exist before its content lands; wait for a non-empty read.
+            if path.exists() and (text := path.read_text()).strip():
+                return text
             if time.monotonic() >= deadline:
                 return None
             await asyncio.sleep(self._poll_interval)

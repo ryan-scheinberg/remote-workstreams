@@ -5,7 +5,7 @@ Voice and phone front-end over **real, interactive Claude Code sessions**: every
 ## State
 
 - v5 built 2026-07-03, replacing the v4 pass the same week (context in the brief). All tests green, ruff clean, cleanup ledger executed.
-- NOT yet done: any real deploy (Tailscale still not installed on this Mac), device testing on an iPhone, live Cartesia traffic (no account/key exists yet), and the brief's gated real-session integration test (text in → transcript out against a live `voice:convo`) — **not written yet**; today no test drives a real session.
+- NOT yet done: any real deploy (Tailscale still not installed on this Mac), device testing on an iPhone, live Cartesia traffic (no account/key exists yet). The brief's gated real-session test exists (`tests/test_live_convo.py`, skipped unless `VOICECODE_LIVE=1`) but has **never been executed against a live session** — it spawns a real haiku CC session in tmux session `voice-qa`.
 - GitHub remote not created; intended home `github.com/ryan-scheinberg/voice-code`, GPLv3. Everything stays local until Ryan says otherwise.
 
 ## Commands
@@ -46,7 +46,7 @@ tests/                           pytest; mirror module names; server_fakes.py = 
 
 ## Conventions
 
-- Tests mock at the tmux/transcript boundary: `FakeTmux`/`FakeSubstrate` + fixture JSONL transcript files. **No test ever launches a real Claude Code session or touches a real tmux server.** Provider SDKs are mocked at the SDK boundary; read the installed package source in `.venv` for the real API surface — versions drift.
+- Tests mock at the tmux/transcript boundary: `FakeTmux`/`FakeSubstrate` + fixture JSONL transcript files. **No default test ever launches a real Claude Code session or touches a real tmux server** — the one exception, `tests/test_live_convo.py`, is skipped unless `VOICECODE_LIVE=1` and must only be run deliberately. Provider SDKs are mocked at the SDK boundary; read the installed package source in `.venv` for the real API surface — versions drift.
 - Composition roots (`voicecode/server/__main__.py`, `voicecode/ambient.py`) are the only modules that import concrete Tmux/adapters; everything else takes dependencies as constructor args so tests inject fakes.
 - Secrets only via `keychain.get_secret("deepgram-api-key" | "cartesia-api-key")` — env vars (`DEEPGRAM_API_KEY`, …) win, which is also how tests inject fakes. Pairing secrets stored as scrypt hashes: `pairing-token-hash`, `pin-hash`. No model API key exists anywhere.
 
@@ -62,7 +62,7 @@ tests/                           pytest; mirror module names; server_fakes.py = 
 
 **Spawning** — `Substrate.spawn` types `command claude --session-id <minted-uuid> --model … --effort … -n <name> [--settings f] [--plugin-dir d] [initial-prompt]` into a fresh window (`command` defeats shell aliases/functions). Minting the UUID makes the transcript path known before the session exists. Continuity: `bootstrap.ensure_convo` reuses an alive `voice:convo` window, respawns a dead one with `--resume <stored-id>`, or fresh-spawns with `/voice-code:role-convo`. Multiline inject = `load-buffer` + `paste-buffer -p`, 0.5s pause, `Enter`. Slash commands are TYPED (`send-keys -l`), never pasted, so the TUI's command mode triggers.
 
-**ConvoBridge** — `run()` polls the transcript tail (0.25s) and fans every entry to subscribers. `turn(text)` sends the text, then streams TTS-ready sentence chunks from complete `AssistantText` blocks until the transcript's `system/turn_duration` line (`TurnEnd`) arrives; one turn active at a time — a new turn detaches the superseded stream. `/compact` appends to the SAME transcript file; tailing continues unbroken.
+**ConvoBridge** — `run()` polls the transcript tail (0.25s) and fans every entry to subscribers. `turn(text)` sends the text, then streams TTS-ready sentence chunks from complete `AssistantText` blocks until the transcript's `system/turn_duration` line (`TurnEnd`) arrives; one turn active at a time — a new turn detaches the superseded stream. Input sent mid-turn QUEUES in the session (Milestone-0), so a superseded/barged turn's remaining blocks and TurnEnd land first — the new turn's stream skips exactly that many unfinished turns' entries (they still reach chat via subscribers) and speaks only its own reply. `/compact` appends to the SAME transcript file; tailing continues unbroken.
 
 **Chat sourcing rule** — the CC transcript is the source of truth: assistant text, tool activity, and final user text all render from transcript entries via the fan-out. The audio pipeline's sink carries ONLY user STT interims (`final=False`), state, TTS audio, and speech_end. Typed `text_input` is not locally echoed — it comes back as a transcript user line.
 
@@ -79,7 +79,7 @@ tests/                           pytest; mirror module names; server_fakes.py = 
 - Ryan's zsh defines a `claude()` function that rewrites a bare `claude` invocation — the substrate must always spawn `command claude` with explicit args (it does; keep it that way).
 - Transcript JSONL is an undocumented internal format, pinned at CC 2.1.201 in `transcript.py` (one line per content block; meta/sidechain lines skipped; tool results come back as `user` lines). Expect breakage on Claude Code updates — smoke-test parsing after any CC update.
 - Text blocks appear in the transcript only when complete — no streaming partials, so first audio waits on the first finished block. role-convo's short spoken turns keep this small; measure before mitigating.
-- The tests never talk to tmux or Claude Code; until the gated real-session test exists, only a manual run proves the live path.
+- The default tests never talk to tmux or Claude Code; only `VOICECODE_LIVE=1 uv run pytest tests/test_live_convo.py` (never run automatically) proves the live path.
 - Deepgram v7: `client.listen.v1.connect` is the nova-3 socket; `/v2` is Flux-only (no interim_results/endpointing); `utterance_end_ms` minimum is 1000; idle sockets drop ~10s → keepalive every 5s (e.g. while muted).
 - Cartesia 3.3.0: SSE chunk events need the `.audio` property (base64-decoded); `AsyncCartesia` does NOT read the key from env — pass it explicitly; `DEFAULT_VOICE_ID` is a stock-voice placeholder until Ryan picks one on the real account.
 - `qrcode.make()` returns an image with no `print_ascii`; build a `qrcode.QRCode()` object instead (the deploy skill's pairing step depends on this).

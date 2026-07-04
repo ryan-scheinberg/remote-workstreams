@@ -101,6 +101,21 @@ async def test_plan_stint_since_line_comes_from_stored_marker(rig):
     await task
 
 
+async def test_plan_stint_waits_out_empty_file(rig):
+    """The planner's output file can exist before its content lands; an empty
+    read must not be treated as the plan."""
+    manager, store, substrate, notify, tmp_path = rig
+    task = asyncio.create_task(manager.plan_stint())
+    await wait_for_spawn(substrate)
+    output = output_path(substrate.spawned[0].spec)
+    output.write_text("")  # created, not yet written
+    await asyncio.sleep(0.05)
+    output.write_text(PLAN_TEXT)
+    await task
+    (plan,) = notify.messages
+    assert plan.type == "stint_plan" and plan.title == "Wire the auth flow"
+
+
 async def test_plan_stint_timeout_kills_planner_and_pushes_error(rig):
     manager, store, substrate, notify, tmp_path = rig
     manager._poll_budget = 0.03
