@@ -1,5 +1,6 @@
 """The /ws endpoint. Speaks voicecode/protocol.py exactly: first text frame must
-be Hello (invalid credential → Error, close); on success Ready, then the loop.
+be Hello (invalid credential → Error, close); on success Ready, then chat history
+replay, then the loop. One live socket globally — a new connection takes over.
 """
 
 from __future__ import annotations
@@ -12,14 +13,14 @@ from starlette.websockets import WebSocket
 from voicecode import protocol
 from voicecode.server.auth import credential_ok
 from voicecode.server.logs import log
-from voicecode.server.sessions import SessionManager, SessionRuntime, UnknownSession
+from voicecode.server.runtime import ConvoRuntime
 from voicecode.server.store import Store
 
 logger = logging.getLogger("voicecode.server.ws")
 
 
 class WSConnection:
-    """sessions.ClientConnection over a Starlette WebSocket."""
+    """runtime.ClientConnection over a Starlette WebSocket."""
 
     def __init__(self, websocket: WebSocket) -> None:
         self.websocket = websocket
@@ -52,7 +53,7 @@ class WSConnection:
 
 
 async def websocket_endpoint(websocket: WebSocket) -> None:
-    manager: SessionManager = websocket.app.state.manager
+    runtime: ConvoRuntime = websocket.app.state.runtime
     store: Store = websocket.app.state.store
     await websocket.accept()
     conn = WSConnection(websocket)
@@ -65,13 +66,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         log(logger, "ws_auth_failed")
         await conn.close_with_error("invalid credential")
         return
-    try:
-        runtime = await manager.attach(hello.session_id, conn)
-    except UnknownSession:
-        await conn.close_with_error("unknown session")
-        return
-    await conn.send_message(protocol.Ready(session_id=runtime.session_id))
-    await conn.send_message(protocol.Sessions(sessions=store.list_sessions()))
+    await conn.send_message(protocol.Ready())
+    await runtime.attach(conn)  # replays chat history, then live entries stream
 
     try:
         while True:
@@ -88,14 +84,13 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             if text is None:
                 continue
             try:
-                runtime = await _handle(manager, store, conn, runtime, text)
+                await _handle(runtime, conn, text)
             except Exception:
                 logger.exception("ws message handling failed")
                 await conn.send_message(protocol.Error(message="internal error"))
     finally:
-        if runtime.conn is conn:
-            await manager.detach(runtime)
-        log(logger, "ws_closed", session_id=runtime.session_id)
+        await runtime.detach(conn)
+        log(logger, "ws_closed")
 
 
 async def _receive_hello(websocket: WebSocket) -> protocol.Hello | None:
@@ -110,20 +105,13 @@ async def _receive_hello(websocket: WebSocket) -> protocol.Hello | None:
     return parsed if isinstance(parsed, protocol.Hello) else None
 
 
-async def _handle(
-    manager: SessionManager,
-    store: Store,
-    conn: WSConnection,
-    runtime: SessionRuntime,
-    text: str,
-) -> SessionRuntime:
-    """Handle one client text frame; returns the (possibly switched) runtime."""
+async def _handle(runtime: ConvoRuntime, conn: WSConnection, text: str) -> None:
     try:
         msg = protocol.parse_client_message(text)
     except ValidationError:
         await conn.send_message(protocol.Error(message="invalid message"))
-        return runtime
-    log(logger, "ws_message", session_id=runtime.session_id, msg_type=msg.type)
+        return
+    log(logger, "ws_message", msg_type=msg.type)
 
     if isinstance(msg, protocol.TextInput):
         if runtime.pipeline is not None:
@@ -131,16 +119,17 @@ async def _handle(
     elif isinstance(msg, protocol.Mute):
         if runtime.pipeline is not None:
             runtime.pipeline.set_muted(msg.muted)
+    elif isinstance(msg, protocol.PlanStint):
+        runtime.plan_stint()
+    elif isinstance(msg, protocol.LaunchWorkstream):
+        runtime.launch_workstream(msg.plan_id)
+    elif isinstance(msg, protocol.SendToWorkstream):
+        runtime.send_to_workstream(msg.workstream)
+    elif isinstance(msg, protocol.CheckIn):
+        await runtime.check_in(msg.workstream)
+    elif isinstance(msg, protocol.Compact):
+        await runtime.compact()
     elif isinstance(msg, protocol.Approval):
-        await runtime.execution.approve(msg.gate_id, msg.approved)
-    elif isinstance(msg, protocol.SwitchSession):
-        if store.get_session(msg.session_id) is None:
-            await conn.send_message(protocol.Error(message="unknown session"))
-            return runtime
-        await manager.detach(runtime)
-        runtime = await manager.attach(msg.session_id, conn)
-        await conn.send_message(protocol.Ready(session_id=runtime.session_id))
-        await conn.send_message(protocol.Sessions(sessions=store.list_sessions()))
+        runtime.approvals.resolve(msg.approval_id, msg.approved)
     else:  # a second Hello mid-connection
         await conn.send_message(protocol.Error(message="already connected"))
-    return runtime

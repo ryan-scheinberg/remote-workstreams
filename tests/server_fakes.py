@@ -1,77 +1,23 @@
-"""Fakes injected through create_app's DI — server tests never touch live APIs."""
+"""Fakes injected through create_app's DI — server tests never touch live APIs or
+tmux, and never import voicecode.convo (built in parallel; FakeConvoBridge stands
+in for its exact interface).
+"""
 
 from __future__ import annotations
 
 import asyncio
+import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any
 
-from voicecode.adapters.execution import ExecutionAdapter
 from voicecode.adapters.stt import STTAdapter, TranscriptChunk
 from voicecode.adapters.tts import TTSAdapter
 from voicecode.audio.state import PipelineState
 from voicecode.config import Config
-from voicecode.events import Progress, StatusEvent, TaskStarted
 from voicecode.server.app import create_app
-
-
-class FakeEngine:
-    def __init__(self) -> None:
-        self.messages: list[dict[str, Any]] = []
-        self.loaded: list[dict[str, Any]] | None = None
-        self.injected: list[StatusEvent] = []
-
-    def inject_events(self, events) -> None:
-        self.injected.extend(events)
-
-    def export_messages(self) -> list[dict[str, Any]]:
-        return list(self.messages)
-
-    def load_messages(self, messages: list[dict[str, Any]]) -> None:
-        self.loaded = list(messages)
-        self.messages = list(messages)
-
-
-class FakeExecution(ExecutionAdapter):
-    """Emits a TaskStarted on start() and a Progress on send() into its event stream."""
-
-    def __init__(self) -> None:
-        self.started_prompts: list[str] = []
-        self.sent: list[str] = []
-        self.approvals: list[tuple[str, bool]] = []
-        self.resumed: list[str] = []
-        self.stopped = False
-        self._queue: asyncio.Queue[StatusEvent | None] = asyncio.Queue()
-
-    async def start(self, prompt: str) -> str:
-        self.started_prompts.append(prompt)
-        self._queue.put_nowait(TaskStarted(summary="Execution started."))
-        return "exec-1"
-
-    async def send(self, message: str) -> None:
-        self.sent.append(message)
-        self._queue.put_nowait(Progress(summary="Still working."))
-
-    async def events(self) -> AsyncIterator[StatusEvent]:
-        while True:
-            event = await self._queue.get()
-            if event is None:
-                return
-            yield event
-
-    async def resume(self, session_id: str) -> None:
-        self.resumed.append(session_id)
-
-    async def approve(self, gate_id: str, approved: bool) -> None:
-        self.approvals.append((gate_id, approved))
-
-    async def stop(self) -> None:
-        self.stopped = True
-        self._queue.put_nowait(None)
-
-    def push_event(self, event: StatusEvent) -> None:
-        self._queue.put_nowait(event)
+from voicecode.server.store import Store
+from voicecode.substrate import CCSession, SessionSpec
+from voicecode.transcript import Entry
 
 
 class FakeSTT(STTAdapter):
@@ -89,18 +35,112 @@ class FakeTTS(TTSAdapter):
         pass
 
 
-class FakePipeline:
-    """Implements the frozen AudioPipeline surface. text() emulates one committed
-    turn so the sink mapping and persistence paths are exercised; a text starting
-    with "dispatch:" routes the rest through on_dispatch."""
+class FakeConvoBridge:
+    """Same surface as voicecode.convo.ConvoBridge; records everything."""
 
-    def __init__(self, stt, tts, engine, sink, on_dispatch=None) -> None:
-        self.engine = engine
+    def __init__(self) -> None:
+        self.history_entries: list[Entry] = []
+        self.sent: list[str] = []
+        self.turns: list[str] = []
+        self.slashes: list[str] = []
+        self.closed = False
+        self._subscribers: list[asyncio.Queue[Entry]] = []
+        self._loop: asyncio.AbstractEventLoop | None = None
+
+    async def run(self) -> None:
+        await asyncio.Event().wait()
+
+    def subscribe(self) -> AsyncIterator[Entry]:
+        self._loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[Entry] = asyncio.Queue()
+        self._subscribers.append(queue)
+
+        async def entries() -> AsyncIterator[Entry]:
+            while True:
+                yield await queue.get()
+
+        return entries()
+
+    def push_entry(self, entry: Entry) -> None:
+        """Thread-safe: TestClient-based tests call this from the test thread."""
+        try:
+            current = asyncio.get_running_loop()
+        except RuntimeError:
+            current = None
+        for queue in self._subscribers:
+            if self._loop is not None and current is not self._loop:
+                self._loop.call_soon_threadsafe(queue.put_nowait, entry)
+            else:
+                queue.put_nowait(entry)
+
+    def history(self, limit: int = 200) -> list[Entry]:
+        return self.history_entries[-limit:]
+
+    async def send(self, text: str) -> None:
+        self.sent.append(text)
+
+    def turn(self, text: str) -> AsyncIterator[str]:
+        self.turns.append(text)
+
+        async def chunks() -> AsyncIterator[str]:
+            yield f"echo: {text}"
+
+        return chunks()
+
+    async def slash(self, command: str) -> None:
+        self.slashes.append(command)
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class FakeSubstrate:
+    """Records spawns/sends/kills; aliveness is scripted via alive_windows."""
+
+    def __init__(self, transcript_dir: Path) -> None:
+        self.transcript_dir = transcript_dir
+        self.spawned: list[CCSession] = []
+        self.sent: list[tuple[str, str]] = []
+        self.killed: list[str] = []
+        self.alive_windows: set[str] = set()
+
+    async def spawn(self, spec: SessionSpec, session_id: str | None = None) -> CCSession:
+        if spec.resume and session_id is None:
+            raise ValueError("resume requires the existing session_id")
+        session_id = session_id or str(uuid.uuid4())
+        session = CCSession(
+            session_id=session_id,
+            window=f"voice:{spec.name}",
+            transcript=self.transcript_dir / f"{session_id}.jsonl",
+            spec=spec,
+        )
+        self.spawned.append(session)
+        self.alive_windows.add(session.window)
+        return session
+
+    async def send(self, session: CCSession, text: str) -> None:
+        self.sent.append((session.window, text))
+
+    async def slash(self, session: CCSession, command: str) -> None:
+        self.sent.append((session.window, command))
+
+    async def alive(self, session: CCSession) -> bool:
+        return session.window in self.alive_windows
+
+    async def kill(self, session: CCSession) -> None:
+        self.alive_windows.discard(session.window)
+        self.killed.append(session.window)
+
+
+class FakePipeline:
+    """Implements the pipeline surface runtime.py drives. text() runs one turn
+    through convo.turn() and plays it back through the sink."""
+
+    def __init__(self, stt, tts, convo, sink) -> None:
+        self.convo = convo
         self.sink = sink
-        self.on_dispatch = on_dispatch
         self.fed: list[bytes] = []
         self.texts: list[str] = []
-        self.events: list[StatusEvent] = []
         self.muted = False
         self.closed = False
         self._done = asyncio.Event()
@@ -113,20 +153,11 @@ class FakePipeline:
 
     async def text(self, text: str) -> None:
         self.texts.append(text)
-        reply = f"echo: {text}"
-        self.engine.messages.append({"role": "user", "content": text})
-        self.engine.messages.append({"role": "assistant", "content": reply})
         await self.sink.state(PipelineState.THINKING)
-        await self.sink.transcript("user", text, True)
-        await self.sink.transcript("assistant", reply, True)
-        await self.sink.audio(b"\x01\x02")
+        async for _sentence in self.convo.turn(text):
+            await self.sink.audio(b"\x01\x02")
         await self.sink.speech_end()
         await self.sink.state(PipelineState.LISTENING)
-        if self.on_dispatch is not None and text.startswith("dispatch:"):
-            await self.on_dispatch(text.removeprefix("dispatch:").strip())
-
-    async def on_events(self, events) -> None:
-        self.events.extend(events)
 
     def set_muted(self, muted: bool) -> None:
         self.muted = muted
@@ -136,38 +167,8 @@ class FakePipeline:
         self._done.set()
 
 
-class Fakes:
-    """Factory registry: create_app collaborators that record every instance."""
-
-    def __init__(self) -> None:
-        self.engines: list[FakeEngine] = []
-        self.executions: list[FakeExecution] = []
-        self.pipelines: list[FakePipeline] = []
-
-    def engine_factory(self) -> FakeEngine:
-        engine = FakeEngine()
-        self.engines.append(engine)
-        return engine
-
-    def execution_factory(self) -> FakeExecution:
-        execution = FakeExecution()
-        self.executions.append(execution)
-        return execution
-
-    def stt_factory(self) -> FakeSTT:
-        return FakeSTT()
-
-    def tts_factory(self) -> FakeTTS:
-        return FakeTTS()
-
-    def pipeline_factory(self, stt, tts, engine, sink, on_dispatch=None) -> FakePipeline:
-        pipeline = FakePipeline(stt, tts, engine, sink, on_dispatch)
-        self.pipelines.append(pipeline)
-        return pipeline
-
-
 class FakeConn:
-    """sessions.ClientConnection for manager-level tests."""
+    """runtime.ClientConnection for direct runtime/approvals tests."""
 
     def __init__(self) -> None:
         self.messages: list[object] = []
@@ -184,14 +185,40 @@ class FakeConn:
         self.closed_error = message
 
 
+class Fakes:
+    """create_app collaborators; every pipeline instance is recorded."""
+
+    def __init__(self, tmp_path: Path) -> None:
+        self.bridge = FakeConvoBridge()
+        self.substrate = FakeSubstrate(tmp_path / "transcripts")
+        self.pipelines: list[FakePipeline] = []
+
+    def stt_factory(self) -> FakeSTT:
+        return FakeSTT()
+
+    def tts_factory(self) -> FakeTTS:
+        return FakeTTS()
+
+    def pipeline_factory(self, stt, tts, convo, sink) -> FakePipeline:
+        pipeline = FakePipeline(stt, tts, convo, sink)
+        self.pipelines.append(pipeline)
+        return pipeline
+
+
 def make_app(tmp_path: Path, fakes: Fakes, web_dir: Path | None = None):
     config = Config(data_dir=tmp_path / "data")
+    store = Store(config.db_path)
     return create_app(
         config,
-        engine_factory=fakes.engine_factory,
-        execution_factory=fakes.execution_factory,
+        store=store,
+        bridge=fakes.bridge,
+        substrate=fakes.substrate,
+        convo_transcript=tmp_path / "convo.jsonl",
         stt_factory=fakes.stt_factory,
         tts_factory=fakes.tts_factory,
         pipeline_factory=fakes.pipeline_factory,
+        approvals_token="boot-token",
+        plugin_dir=tmp_path / "plugin",
+        workstream_settings=tmp_path / "workstream-settings.json",
         web_dir=web_dir,
     )

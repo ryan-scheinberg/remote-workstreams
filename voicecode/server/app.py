@@ -1,5 +1,5 @@
 """FastAPI app factory. Every collaborator is injected so tests run on fakes;
-__main__.py is the only module that wires the concrete implementations.
+__main__.py (and voicecode/ambient.py) are the only modules that wire concretes.
 """
 
 from __future__ import annotations
@@ -16,17 +16,20 @@ from starlette.staticfiles import StaticFiles
 
 from voicecode.config import Config
 from voicecode.server import api, ws
+from voicecode.server.approvals import Approvals
 from voicecode.server.auth import PairingManager
 from voicecode.server.logs import log, setup_logging
-from voicecode.server.sessions import (
-    EngineFactory,
-    ExecutionFactory,
+from voicecode.server.runtime import (
+    ClientPush,
+    ConvoBridge,
+    ConvoRuntime,
     PipelineFactory,
-    SessionManager,
     STTFactory,
     TTSFactory,
 )
 from voicecode.server.store import Store
+from voicecode.server.workstreams import WorkstreamManager
+from voicecode.substrate import Substrate
 
 logger = logging.getLogger("voicecode.server.http")
 
@@ -55,19 +58,35 @@ class SPAStaticFiles(StaticFiles):
 def create_app(
     config: Config,
     *,
-    engine_factory: EngineFactory,
-    execution_factory: ExecutionFactory,
+    store: Store,
+    bridge: ConvoBridge,
+    substrate: Substrate,
+    convo_transcript: Path,
     stt_factory: STTFactory,
     tts_factory: TTSFactory,
     pipeline_factory: PipelineFactory,
+    approvals_token: str,
+    plugin_dir: Path,
+    workstream_settings: Path,
     web_dir: Path | None = None,
 ) -> FastAPI:
     setup_logging()
-    store = Store(config.db_path)
-    manager = SessionManager(
+    push = ClientPush()
+    workstreams = WorkstreamManager(
+        substrate,
         store,
-        engine_factory=engine_factory,
-        execution_factory=execution_factory,
+        push,
+        convo_transcript=convo_transcript,
+        data_dir=config.data_dir,
+        plugin_dir=plugin_dir,
+        settings_file=workstream_settings,
+    )
+    approvals = Approvals(push)
+    runtime = ConvoRuntime(
+        bridge,
+        push,
+        workstreams,
+        approvals,
         stt_factory=stt_factory,
         tts_factory=tts_factory,
         pipeline_factory=pipeline_factory,
@@ -75,14 +94,17 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        runtime.start()
         yield
-        await manager.shutdown()
+        await runtime.shutdown()
         store.close()
 
     app = FastAPI(title="voice-code", lifespan=lifespan)
     app.state.config = config
     app.state.store = store
-    app.state.manager = manager
+    app.state.runtime = runtime
+    app.state.approvals = approvals
+    app.state.approvals_token = approvals_token
     app.state.pairing = PairingManager(store)
 
     @app.middleware("http")

@@ -6,27 +6,25 @@ const $ = (id) => document.getElementById(id);
 const els = {
   connDot: $("conn-dot"),
   connLabel: $("conn-label"),
-  sessionBtn: $("btn-session"),
-  sessionTitle: $("session-title"),
-  orb: $("orb"),
-  stage: $("stage"),
+  stateChip: $("state-chip"),
   stateLabel: $("state-label"),
-  muteChip: $("mute-chip"),
-  transcript: $("transcript"),
-  transcriptEmpty: $("transcript-empty"),
-  composer: $("composer"),
+  unpairBtn: $("btn-unpair"),
+  chat: $("chat"),
+  chatEmpty: $("chat-empty"),
+  approvals: $("approvals"),
+  workstreams: $("workstreams"),
+  planBtn: $("btn-plan"),
+  compactBtn: $("btn-compact"),
+  muteBtn: $("btn-mute"),
   composerInput: $("composer-input"),
   composerSend: $("composer-send"),
-  viewerBtn: $("btn-viewer"),
-  viewerBadge: $("viewer-badge"),
-  muteBtn: $("btn-mute"),
-  keyboardBtn: $("btn-keyboard"),
   backdrop: $("backdrop"),
-  sheetViewer: $("sheet-viewer"),
-  sheetSessions: $("sheet-sessions"),
-  eventFeed: $("event-feed"),
-  sessionList: $("session-list"),
-  unpairBtn: $("btn-unpair"),
+  sheetPlan: $("sheet-plan"),
+  planBody: $("plan-body"),
+  planTitle: $("plan-title"),
+  planText: $("plan-text"),
+  planLaunch: $("btn-plan-launch"),
+  planDismiss: $("btn-plan-dismiss"),
   toast: $("toast"),
   screenStart: $("screen-start"),
   screenPairing: $("screen-pairing"),
@@ -40,10 +38,18 @@ const els = {
 let handlers = {};
 let connState = "offline"; // offline | connecting | connected
 let pipeState = "listening"; // protocol pipeline state
-const pending = { user: null, assistant: null }; // interim transcript elements
-let lastFinal = { role: null, el: null, t: 0 };
-let approvalsOpen = 0;
+const pending = { user: null, assistant: null }; // interim chat bubbles
+let planId = null; // plan_id of the stint plan currently in the sheet
+let compactTimer = 0;
 let toastTimer = 0;
+
+// Chip copy per pipeline state (quoted so the protocol drift test sees them).
+const STATE_COPY = {
+  "listening": "listening",
+  "thinking": "thinking",
+  "speaking": "speaking",
+  "interrupted": "interrupted",
+};
 
 export function init(h) {
   handlers = h;
@@ -53,16 +59,21 @@ export function init(h) {
     handlers.onPair(els.pairToken.value.trim(), els.pairPin.value.trim());
   });
   els.muteBtn.addEventListener("click", () => handlers.onMute());
-  els.keyboardBtn.addEventListener("click", toggleComposer);
   els.composerSend.addEventListener("click", sendComposer);
   els.composerInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendComposer();
   });
-  els.viewerBtn.addEventListener("click", () => openSheet(els.sheetViewer));
-  els.sessionBtn.addEventListener("click", () => openSheet(els.sheetSessions));
-  els.backdrop.addEventListener("click", closeSheets);
+  els.planBtn.addEventListener("click", () => {
+    if (handlers.onPlanStint()) planPending(true);
+  });
+  els.compactBtn.addEventListener("click", compactTap);
+  els.planLaunch.addEventListener("click", () => {
+    if (planId !== null && handlers.onLaunch(planId)) hideStintPlan();
+  });
+  els.planDismiss.addEventListener("click", hideStintPlan);
+  els.backdrop.addEventListener("click", hideStintPlan);
   for (const btn of document.querySelectorAll(".sheet-close")) {
-    btn.addEventListener("click", closeSheets);
+    btn.addEventListener("click", hideStintPlan);
   }
   els.unpairBtn.addEventListener("click", () => {
     if (confirm("Forget this device's pairing? You'll need the token and PIN again.")) {
@@ -102,41 +113,25 @@ export function pairError(message) {
   els.pairError.hidden = !message;
 }
 
-// ---- orb + status ----
+// ---- connection + state chip ----
 
-function applyOrb() {
+function applyChip() {
   const shown = connState === "connected" ? pipeState : connState;
-  els.orb.dataset.state = shown;
-  els.stage.style.setProperty("--accent", `var(--${accentFor(shown)})`);
-  els.stateLabel.textContent = shown;
+  els.stateChip.dataset.state = shown;
+  els.stateLabel.textContent = STATE_COPY[shown] || shown;
   if (shown !== "listening" && shown !== "speaking") setLevel(0);
-}
-
-function accentFor(state) {
-  switch (state) {
-    case "listening":
-      return "teal";
-    case "thinking":
-      return "amber";
-    case "speaking":
-      return "ember";
-    case "interrupted":
-      return "text";
-    default:
-      return "gray";
-  }
 }
 
 export function setConnection(state) {
   connState = state;
   els.connDot.className = state;
   els.connLabel.textContent = state === "connecting" ? "connecting…" : state;
-  applyOrb();
+  applyChip();
 }
 
 export function setState(state) {
   pipeState = state;
-  applyOrb();
+  applyChip();
 }
 
 export function currentState() {
@@ -144,15 +139,14 @@ export function currentState() {
 }
 
 export function setLevel(v) {
-  els.orb.style.setProperty("--level", Math.min(1, Math.max(0, v)).toFixed(3));
+  els.stateChip.style.setProperty("--level", Math.min(1, Math.max(0, v)).toFixed(3));
 }
 
 export function setMuted(muted) {
   els.muteBtn.setAttribute("aria-pressed", String(muted));
-  els.muteChip.hidden = !muted;
 }
 
-// ---- transcript ----
+// ---- chat ----
 
 function pinned(el) {
   return el.scrollHeight - el.scrollTop - el.clientHeight < 60;
@@ -162,52 +156,43 @@ function keepPinned(el, wasPinned) {
   if (wasPinned) el.scrollTop = el.scrollHeight;
 }
 
-export function addTranscript(role, text, final) {
-  els.transcriptEmpty.hidden = true;
-  const wasPinned = pinned(els.transcript);
+export function addChat(role, text, final) {
+  els.chatEmpty.hidden = true;
+  const wasPinned = pinned(els.chat);
+  if (role === "activity") {
+    const el = document.createElement("p");
+    el.className = "turn activity";
+    el.textContent = text;
+    els.chat.append(el);
+    keepPinned(els.chat, wasPinned);
+    return;
+  }
   let el = pending[role];
   if (el) {
-    // Interims replace wholesale (each carries the utterance so far).
+    // Interims replace wholesale (each carries the utterance so far); the
+    // final replaces the interim's text and clears the slot.
     el.textContent = text;
     if (final) {
       el.classList.remove("interim");
       pending[role] = null;
-      lastFinal = { role, el, t: Date.now() };
     }
-    keepPinned(els.transcript, wasPinned);
-    return;
+  } else {
+    el = document.createElement("p");
+    el.className = `turn ${role}${final ? "" : " interim"}`;
+    el.textContent = text;
+    els.chat.append(el);
+    if (!final) pending[role] = el;
   }
-  // Sentence-chunked finals from one utterance merge into one block.
-  if (final && lastFinal.role === role && lastFinal.el?.isConnected && Date.now() - lastFinal.t < 10000) {
-    lastFinal.el.textContent += " " + text;
-    lastFinal.t = Date.now();
-    keepPinned(els.transcript, wasPinned);
-    return;
-  }
-  el = document.createElement("p");
-  el.className = `turn ${role}${final ? "" : " interim"}`;
-  el.textContent = text;
-  els.transcript.append(el);
-  if (final) lastFinal = { role, el, t: Date.now() };
-  else pending[role] = el;
-  keepPinned(els.transcript, wasPinned);
+  keepPinned(els.chat, wasPinned);
 }
 
-export function clearTranscript() {
-  els.transcript.replaceChildren(els.transcriptEmpty);
-  els.transcriptEmpty.hidden = false;
+export function clearChat() {
+  els.chat.replaceChildren(els.chatEmpty);
+  els.chatEmpty.hidden = false;
   pending.user = pending.assistant = null;
-  lastFinal = { role: null, el: null, t: 0 };
 }
 
 // ---- composer ----
-
-function toggleComposer() {
-  const show = els.composer.hidden;
-  els.composer.hidden = !show;
-  els.keyboardBtn.setAttribute("aria-pressed", String(show));
-  if (show) els.composerInput.focus();
-}
 
 function sendComposer() {
   const text = els.composerInput.value.trim();
@@ -215,54 +200,122 @@ function sendComposer() {
   if (handlers.onText(text)) els.composerInput.value = "";
 }
 
-// ---- workspace viewer ----
+// ---- action bar ----
 
-function clockTime(ts) {
-  return new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+export function planPending(on) {
+  els.planBtn.classList.toggle("pending", on);
+  els.planBtn.disabled = on;
 }
 
-// Keys are voicecode/events.py type literals (quoted so the drift test sees them).
-const GLYPHS = {
-  "task_started": "▸",
-  "progress": "·",
-  "finding": "◆",
-  "completed": "✓",
-  "error": "✕",
-};
-
-function feedEmpty() {
-  const msg = els.eventFeed.querySelector(".sheet-empty");
-  if (msg) msg.remove();
-}
-
-export function addEvent(evt) {
-  feedEmpty();
-  const row = document.createElement("div");
-  row.className = `evt ${evt.type}`;
-  const glyph = document.createElement("span");
-  glyph.className = "evt-glyph";
-  glyph.textContent = GLYPHS[evt.type] || "·";
-  const body = document.createElement("div");
-  const summary = document.createElement("p");
-  summary.className = "evt-summary";
-  summary.textContent = evt.summary;
-  body.append(summary);
-  if (evt.detail) {
-    const detail = document.createElement("p");
-    detail.className = "evt-detail";
-    detail.textContent = evt.detail;
-    body.append(detail);
+// Compact needs a confirm tap: first tap arms, second within 2.6s fires.
+function compactTap() {
+  if (!els.compactBtn.classList.contains("armed")) {
+    els.compactBtn.classList.add("armed");
+    els.compactBtn.textContent = "Compact?";
+    compactTimer = setTimeout(disarmCompact, 2600);
+    return;
   }
-  const time = document.createElement("time");
-  time.textContent = clockTime(evt.ts);
-  row.append(glyph, body, time);
-  appendToFeed(row);
+  disarmCompact();
+  if (handlers.onCompact()) toast("Compacting the conversation…");
 }
 
-export function addApproval(evt) {
-  feedEmpty();
+function disarmCompact() {
+  clearTimeout(compactTimer);
+  els.compactBtn.classList.remove("armed");
+  els.compactBtn.textContent = "Compact";
+}
+
+// ---- stint plan sheet ----
+
+export function showStintPlan(plan) {
+  planId = plan.plan_id;
+  els.planTitle.textContent = plan.title || "Stint plan";
+  els.planText.textContent = plan.text || "";
+  els.planBody.scrollTop = 0;
+  els.sheetPlan.classList.add("open");
+  els.backdrop.classList.add("open");
+}
+
+export function hideStintPlan() {
+  els.sheetPlan.classList.remove("open");
+  els.backdrop.classList.remove("open");
+}
+
+// ---- workstream cards ----
+
+function relTime(iso) {
+  const t = Date.parse(iso); // protocol timestamps are ISO strings
+  if (Number.isNaN(t)) return "";
+  const s = Math.max(0, (Date.now() - t) / 1000);
+  if (s < 90) return "now";
+  if (s < 5400) return `${Math.round(s / 60)}m ago`;
+  if (s < 129600) return `${Math.round(s / 3600)}h ago`;
+  return `${Math.round(s / 86400)}d ago`;
+}
+
+export function renderWorkstreams(workstreams) {
+  const chatPinned = pinned(els.chat); // cards below shrink the chat viewport
+  els.workstreams.replaceChildren(); // empty list renders nothing at all
+  for (const ws of workstreams) {
+    const label = ws.title || ws.name;
+    const card = document.createElement("article");
+    card.className = `ws ${ws.status}`;
+
+    const head = document.createElement("div");
+    head.className = "ws-head";
+    const dot = document.createElement("span");
+    dot.className = "ws-dot";
+    const title = document.createElement("span");
+    title.className = "ws-title";
+    title.textContent = label;
+    const when = document.createElement("span");
+    when.className = "ws-when";
+    when.textContent = ws.last_activity ? relTime(ws.last_activity) : "";
+    head.append(dot, title, when);
+
+    const name = document.createElement("p");
+    name.className = "ws-name";
+    name.textContent = `${ws.name} · ${ws.status}`;
+    card.append(head, name);
+
+    if (ws.tail?.length) {
+      const tail = document.createElement("div");
+      tail.className = "ws-tail";
+      tail.textContent = ws.tail.join("\n");
+      card.append(tail);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "ws-actions";
+    const sendBtn = document.createElement("button");
+    sendBtn.textContent = "Send latest";
+    sendBtn.addEventListener("click", () => {
+      if (handlers.onSendToWorkstream(ws.name)) toast(`Routing the latest to ${label}…`);
+    });
+    const checkBtn = document.createElement("button");
+    checkBtn.textContent = "Check in";
+    checkBtn.addEventListener("click", () => {
+      if (handlers.onCheckIn(ws.name)) toast(`Checking in on ${label}…`);
+    });
+    actions.append(sendBtn, checkBtn);
+    card.append(actions);
+
+    els.workstreams.append(card);
+  }
+  keepPinned(els.chat, chatPinned);
+}
+
+// ---- approval cards ----
+
+export function addApproval(req) {
+  const chatPinned = pinned(els.chat); // the card below shrinks the chat viewport
+  const id = String(req.approval_id);
+  // A reconnect can replay a still-open gate; replace, don't duplicate.
+  els.approvals.querySelector(`[data-approval-id="${CSS.escape(id)}"]`)?.remove();
+
   const card = document.createElement("div");
   card.className = "approval";
+  card.dataset.approvalId = id;
 
   const head = document.createElement("div");
   head.className = "approval-head";
@@ -271,20 +324,23 @@ export function addApproval(evt) {
   tag.textContent = "approval required";
   const tool = document.createElement("span");
   tool.className = "tool";
-  tool.textContent = evt.tool_name;
+  tool.textContent = req.tool;
   head.append(tag, tool);
 
   const summary = document.createElement("p");
-  summary.className = "evt-summary";
-  summary.textContent = evt.summary;
-  card.append(head, summary);
+  summary.className = "approval-summary";
+  summary.textContent = req.summary;
 
-  if (evt.detail) {
-    const detail = document.createElement("p");
-    detail.className = "evt-detail";
-    detail.textContent = evt.detail;
-    card.append(detail);
-  }
+  const session = document.createElement("p");
+  session.className = "approval-session";
+  session.textContent = req.session;
+  card.append(head, summary, session);
+
+  // The server times the gate out around 60s; fade the card out to match.
+  const expire = setTimeout(() => {
+    card.classList.add("expired");
+    setTimeout(() => card.remove(), 450);
+  }, 60000);
 
   const actions = document.createElement("div");
   actions.className = "approval-actions";
@@ -295,101 +351,25 @@ export function addApproval(evt) {
   approve.className = "btn-approve";
   approve.textContent = "Approve";
   const decide = (approved) => {
-    // Only resolve the card if the verdict actually reached the server.
-    if (!handlers.onApproval(evt.gate_id, approved)) return;
-    actions.remove();
-    card.classList.add("resolved");
-    const verdict = document.createElement("p");
-    verdict.className = `approval-verdict ${approved ? "yes" : "no"}`;
-    verdict.textContent = approved ? "✓ approved" : "✕ denied";
-    card.append(verdict);
-    bumpBadge(-1);
+    // Only dismiss the card if the verdict actually reached the server.
+    if (!handlers.onApproval(req.approval_id, approved)) return;
+    clearTimeout(expire);
+    card.remove();
   };
   deny.addEventListener("click", () => decide(false));
   approve.addEventListener("click", () => decide(true));
   actions.append(deny, approve);
   card.append(actions);
 
-  appendToFeed(card);
-  bumpBadge(1);
+  els.approvals.append(card);
+  keepPinned(els.chat, chatPinned);
 }
 
-function appendToFeed(el) {
-  const wasPinned = pinned(els.eventFeed);
-  els.eventFeed.append(el);
-  keepPinned(els.eventFeed, wasPinned);
+export function clearApprovals() {
+  els.approvals.replaceChildren();
 }
 
-function bumpBadge(delta) {
-  approvalsOpen = Math.max(0, approvalsOpen + delta);
-  els.viewerBadge.textContent = String(approvalsOpen);
-  els.viewerBadge.hidden = approvalsOpen === 0;
-}
-
-export function clearEvents() {
-  els.eventFeed.replaceChildren();
-  const msg = document.createElement("p");
-  msg.className = "sheet-empty";
-  msg.textContent = "No activity yet. Execution events land here.";
-  els.eventFeed.append(msg);
-  approvalsOpen = 0;
-  bumpBadge(0);
-}
-
-// ---- sessions ----
-
-function relTime(ts) {
-  const s = Math.max(0, Date.now() / 1000 - ts);
-  if (s < 90) return "now";
-  if (s < 5400) return `${Math.round(s / 60)}m ago`;
-  if (s < 129600) return `${Math.round(s / 3600)}h ago`;
-  return `${Math.round(s / 86400)}d ago`;
-}
-
-export function renderSessions(sessions, currentId) {
-  els.sessionList.replaceChildren();
-  if (sessions.length === 0) {
-    const msg = document.createElement("p");
-    msg.className = "sheet-empty";
-    msg.textContent = "No sessions reported yet.";
-    els.sessionList.append(msg);
-    return;
-  }
-  for (const s of sessions) {
-    const row = document.createElement("button");
-    row.className = `session${s.id === currentId ? " current" : ""}`;
-    const dot = document.createElement("span");
-    dot.className = "dot";
-    const name = document.createElement("span");
-    name.className = "name";
-    name.textContent = s.title || "untitled";
-    const when = document.createElement("span");
-    when.className = "when";
-    when.textContent = relTime(s.last_active);
-    row.append(dot, name, when);
-    row.addEventListener("click", () => {
-      if (s.id !== currentId) handlers.onSwitchSession(s.id);
-      closeSheets();
-    });
-    els.sessionList.append(row);
-  }
-  const current = sessions.find((s) => s.id === currentId);
-  if (current) els.sessionTitle.textContent = current.title || "session";
-}
-
-// ---- sheets + toast ----
-
-function openSheet(sheet) {
-  closeSheets();
-  sheet.classList.add("open");
-  els.backdrop.classList.add("open");
-}
-
-export function closeSheets() {
-  els.sheetViewer.classList.remove("open");
-  els.sheetSessions.classList.remove("open");
-  els.backdrop.classList.remove("open");
-}
+// ---- toast ----
 
 export function toast(message, isError = false) {
   clearTimeout(toastTimer);

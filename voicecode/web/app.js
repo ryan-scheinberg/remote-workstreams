@@ -7,7 +7,6 @@ import { hasWebAuthn, PairError, pairDevice } from "./pairing.js";
 import * as ui from "./ui.js";
 
 const CRED_KEY = "voicecode.credential";
-const SESSION_KEY = "voicecode.session_id";
 
 const app = {
   ws: null,
@@ -17,7 +16,6 @@ const app = {
   muted: false,
   ready: false,
   started: false, // the one-time user gesture happened
-  sessionId: localStorage.getItem(SESSION_KEY),
   attempts: 0,
   reconnectTimer: 0,
   wakeLock: null,
@@ -31,9 +29,13 @@ ui.init({
   onStart: beginSession,
   onPair: pair,
   onMute: toggleMute,
-  onText: sendText,
-  onApproval: (gateId, approved) => send({ type: "approval", gate_id: gateId, approved }),
-  onSwitchSession: (id) => send({ type: "switch_session", session_id: id }),
+  onText: (text) => send({ type: "text_input", text }),
+  onPlanStint: () => send({ type: "plan_stint" }),
+  onCompact: () => send({ type: "compact" }),
+  onLaunch: (planId) => send({ type: "launch_workstream", plan_id: planId }),
+  onSendToWorkstream: (name) => send({ type: "send_to_workstream", workstream: name }),
+  onCheckIn: (name) => send({ type: "check_in", workstream: name }),
+  onApproval: (approvalId, approved) => send({ type: "approval", approval_id: approvalId, approved }),
   onUnpair: unpair,
 });
 
@@ -58,7 +60,6 @@ async function pair(token, pin) {
 
 function unpair() {
   localStorage.removeItem(CRED_KEY);
-  localStorage.removeItem(SESSION_KEY);
   if (app.ws) app.ws.close();
   location.reload();
 }
@@ -117,7 +118,7 @@ function connect() {
     clearTimeout(connectTimeout);
     app.attempts = 0;
     // State is server-side: re-present the credential, no re-auth.
-    ws.send(JSON.stringify({ type: "hello", credential: credential(), session_id: app.sessionId }));
+    ws.send(JSON.stringify({ type: "hello", credential: credential() }));
     if (app.muted) ws.send(JSON.stringify({ type: "mute", muted: true }));
   };
 
@@ -140,6 +141,7 @@ function connect() {
     if (app.ws !== ws) return;
     app.ready = false;
     ui.setConnection("offline");
+    ui.planPending(false); // a stint_plan can't arrive on a dead socket
     scheduleReconnect();
   };
 }
@@ -169,14 +171,11 @@ function handleMessage(msg) {
         ui.toast(`Server wants ${msg.mic_format.encoding}; this client only speaks pcm_s16le.`, true);
         return;
       }
-      if (app.sessionId && msg.session_id !== app.sessionId) {
-        ui.clearTranscript();
-        ui.clearEvents();
-      }
-      app.sessionId = msg.session_id;
-      localStorage.setItem(SESSION_KEY, msg.session_id);
       app.mic?.setTargetRate(msg.mic_format.sample_rate);
       app.playback.setRate(msg.tts_format.sample_rate);
+      // The server replays the full chat history after every ready.
+      ui.clearChat();
+      ui.clearApprovals();
       app.ready = true;
       ui.setConnection("connected");
       ui.setState("listening");
@@ -187,20 +186,24 @@ function handleMessage(msg) {
       if (msg.state === "interrupted" || msg.state === "listening") app.playback.flush();
       ui.setState(msg.state);
       break;
-    case "transcript":
-      ui.addTranscript(msg.role, msg.text, msg.final);
-      break;
-    case "event":
-      if (msg.event.type === "needs_approval") ui.addApproval(msg.event);
-      else ui.addEvent(msg.event);
+    case "chat":
+      ui.addChat(msg.role, msg.text, msg.final);
       break;
     case "speech_end":
       app.playback.endUtterance();
       break;
-    case "sessions":
-      ui.renderSessions(msg.sessions, app.sessionId);
+    case "workstreams":
+      ui.renderWorkstreams(msg.workstreams);
+      break;
+    case "stint_plan":
+      ui.planPending(false);
+      ui.showStintPlan(msg);
+      break;
+    case "approval_request":
+      ui.addApproval(msg);
       break;
     case "error":
+      ui.planPending(false); // the pending plan_stint may be what errored
       ui.toast(msg.message, true);
       break;
     default:
@@ -215,10 +218,6 @@ function toggleMute() {
   ui.setMuted(app.muted);
   if (app.muted) ui.setLevel(0);
   send({ type: "mute", muted: app.muted });
-}
-
-function sendText(text) {
-  return send({ type: "text_input", text });
 }
 
 // ---- iOS lifecycle: Safari suspends the tab; treat return like a dropped phone ----

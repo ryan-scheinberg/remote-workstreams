@@ -1,30 +1,24 @@
-"""AudioPipeline drives one live audio session: mic PCM in → STT → engine turn →
+"""AudioPipeline drives one live audio session: mic PCM in → STT → convo turn →
 sentence-chunked TTS → PCM out, with barge-in killing TTS the instant user speech
 is detected during SPEAKING.
 
-The public surface (constructor, run/feed/text/on_events/set_muted/close, AudioSink)
-is frozen — the server and local frontend code against it.
+The conversation is a real Claude Code session behind ConvoPort: turn() streams
+TTS-ready sentences parsed from the session's transcript and ends when the
+transcript's turn_duration marker (TurnEnd) arrives.
 
 Turn/interruption policy:
 - Barge-in signal: any non-empty transcript chunk (interim or final) while SPEAKING.
   Client-side echoCancellation keeps the assistant's own voice out of the mic.
-- On barge-in the in-flight turn task is cancelled and engine.turn()'s generator is
-  closed. The engine owns its message list: we accept whatever reply text the engine
-  recorded when its generator closed; the pipeline never appends text itself, so
-  nothing is ever appended twice.
-- A reply interrupted mid-stream records nothing, so it has no dispatch. Once the
-  reply has fully streamed it is committed to history, dispatch tag included — its
-  handoff is routed even if playback is barged into afterward, so history never
-  claims a handoff that didn't happen.
+- Barge-in silences TTS and abandons the sentence stream, but the session keeps
+  writing — the full reply still lands in chat from the transcript.
 - User speech that endpoints while a turn is still THINKING supersedes it: the
   in-flight turn is cancelled and a fresh turn runs with the new text.
-- Proactive-worthy events (completed/needs_approval) arriving while muted or mid-turn
-  set a pending flag; the proactive turn runs on unmute or when the pipeline next
-  returns to LISTENING.
+- sink.transcript carries ONLY user STT interims (final=False, the live caption).
+  Final text of both roles reaches the UI from ConvoBridge entries via the server.
 
 Latency instrumentation: every turn logs one JSON line on the "voicecode.latency"
-logger — endpoint decision, final transcript, engine first chunk, first TTS audio
-byte, plus derived endpoint→first-audio ms. The ≤1.0s p50 target is measured.
+logger — endpoint decision, final transcript, first sentence, first TTS audio byte,
+plus derived endpoint→first-audio ms.
 """
 
 from __future__ import annotations
@@ -34,20 +28,16 @@ import contextlib
 import json
 import logging
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Callable
 from dataclasses import asdict, dataclass
 from typing import Literal, Protocol
 
 from voicecode.adapters.stt import STTAdapter, TranscriptChunk
 from voicecode.adapters.tts import TTSAdapter
 from voicecode.audio.state import PipelineState, StateMachine
-from voicecode.engine.conversation import ConversationEngine
-from voicecode.events import StatusEvent
 
 logger = logging.getLogger(__name__)
 latency_log = logging.getLogger("voicecode.latency")
-
-_PROACTIVE_TYPES = ("completed", "needs_approval")
 
 
 @dataclass
@@ -55,10 +45,10 @@ class TurnTimings:
     """Per-turn latency probe. Timestamps are time.time() seconds (TranscriptChunk.ts
     uses the same clock)."""
 
-    kind: Literal["voice", "text", "proactive"] = "voice"
+    kind: Literal["voice", "text"] = "voice"
     endpoint_ts: float | None = None  # STT endpoint decision (speech_final chunk)
     transcript_ts: float | None = None  # final transcript committed / input received
-    engine_first_chunk_ts: float | None = None
+    first_sentence_ts: float | None = None
     first_audio_ts: float | None = None
     end_ts: float | None = None
     interrupted: bool = False
@@ -80,8 +70,16 @@ async def _aclose(gen: object) -> None:
             await aclose()
 
 
+class ConvoPort(Protocol):
+    """The pipeline's view of the conversation session: text in, sentences out."""
+
+    def turn(self, text: str) -> AsyncIterator[str]: ...
+
+
 class AudioSink(Protocol):
-    """Where pipeline output goes — a WebSocket connection or the local speaker."""
+    """Where pipeline output goes — a WebSocket connection or the local speaker.
+
+    transcript() only ever carries user STT interims (final=False)."""
 
     async def state(self, state: PipelineState) -> None: ...
 
@@ -97,29 +95,25 @@ class AudioPipeline:
         self,
         stt: STTAdapter,
         tts: TTSAdapter,
-        engine: ConversationEngine,
+        convo: ConvoPort,
         sink: AudioSink,
-        on_dispatch: Callable[[str], Awaitable[None]] | None = None,
     ) -> None:
         self.stt = stt
         self.tts = tts
-        self.engine = engine
+        self.convo = convo
         self.sink = sink
-        self.on_dispatch = on_dispatch  # after each turn, engine.take_dispatch() routes here
         self.muted = False
         self._sm = StateMachine()
         self._mic: asyncio.Queue[bytes | None] = asyncio.Queue()
         self._finals: list[str] = []  # finalized spans of the in-progress user utterance
         self._turn_task: asyncio.Task[None] | None = None
-        self._unmute_task: asyncio.Task[None] | None = None
-        self._pending_proactive = False
         self._closed = False
 
     @property
     def state(self) -> PipelineState:
         return self._sm.state
 
-    # ---- frozen public surface ----
+    # ---- public surface ----
 
     async def run(self) -> None:
         """Main loop; consumes audio fed via feed() until close()."""
@@ -130,8 +124,8 @@ class AudioPipeline:
             await self._abort_turn()
 
     async def feed(self, pcm: bytes) -> None:
-        """Mic audio from the client (protocol.MIC_FORMAT)."""
-        if not self._closed:
+        """Mic audio from the client (protocol.MIC_FORMAT); dropped while muted."""
+        if not self._closed and not self.muted:
             await self._mic.put(pcm)
 
     async def text(self, text: str) -> None:
@@ -140,40 +134,15 @@ class AudioPipeline:
         if not text:
             return
         timings = TurnTimings(kind="text", transcript_ts=time.time())
-        await self.sink.transcript("user", text, final=True)
-        await self._start_turn(lambda: self.engine.turn(text), timings)
-
-    async def on_events(self, events: Sequence[StatusEvent]) -> None:
-        """Bridge input: inject into the engine; completed/needs_approval trigger
-        proactive speech when the user is silent and not muted."""
-        events = list(events)
-        if not events:
-            return
-        self.engine.inject_events(events)
-        if not any(event.type in _PROACTIVE_TYPES for event in events):
-            return
-        if not self.muted and self._sm.state is PipelineState.LISTENING:
-            await self._start_proactive()
-        else:
-            self._pending_proactive = True
+        await self._start_turn(lambda: self.convo.turn(text), timings)
 
     def set_muted(self, muted: bool) -> None:
         self.muted = muted
-        if (
-            not muted
-            and self._pending_proactive
-            and self._sm.state is PipelineState.LISTENING
-            and not self._closed
-        ):
-            self._pending_proactive = False  # claim it now: a rapid second unmute must not double-fire
-            self._unmute_task = asyncio.create_task(self._start_proactive())
 
     async def close(self) -> None:
         if self._closed:
             return
         self._closed = True
-        if self._unmute_task is not None and not self._unmute_task.done():
-            self._unmute_task.cancel()
         await self._abort_turn()
         await self._mic.put(None)  # ends _mic_audio → STT stream ends → run() returns
 
@@ -217,8 +186,7 @@ class AudioPipeline:
                 await self._set_state(PipelineState.LISTENING)  # barge-in was noise
             return
         timings = TurnTimings(kind="voice", endpoint_ts=chunk.ts, transcript_ts=time.time())
-        await self.sink.transcript("user", text, final=True)
-        await self._start_turn(lambda: self.engine.turn(text), timings)
+        await self._start_turn(lambda: self.convo.turn(text), timings)
 
     async def _start_turn(
         self, factory: Callable[[], AsyncIterator[str]], timings: TurnTimings
@@ -226,33 +194,22 @@ class AudioPipeline:
         if self._sm.state is PipelineState.SPEAKING:
             await self._barge_in()  # typed input during speech behaves like barge-in
         if self._sm.state is PipelineState.THINKING:
-            await self._abort_turn()  # new user speech supersedes the in-flight turn
-        elif (
-            self._turn_task is not None
-            and not self._turn_task.done()
-            and self._turn_task is not asyncio.current_task()
-        ):
-            await self._turn_task  # back in LISTENING but still routing dispatch
+            await self._abort_turn()  # new user input supersedes the in-flight turn
+        elif self._turn_task is not None and not self._turn_task.done():
+            await self._turn_task  # back in LISTENING, finishing its last steps
         if self._sm.state is not PipelineState.THINKING:
             await self._set_state(PipelineState.THINKING)
         self._turn_task = asyncio.create_task(self._speak_turn(factory(), timings))
 
-    async def _start_proactive(self) -> None:
-        self._pending_proactive = False
-        timings = TurnTimings(kind="proactive", transcript_ts=time.time())
-        await self._start_turn(lambda: self.engine.proactive_turn(), timings)
-
     async def _speak_turn(self, chunks: AsyncIterator[str], timings: TurnTimings) -> None:
-        spoken: list[str] = []
         tts_stream: AsyncIterator[bytes] | None = None
         try:
             async for sentence in chunks:
-                if timings.engine_first_chunk_ts is None:
-                    timings.engine_first_chunk_ts = time.time()
+                if timings.first_sentence_ts is None:
+                    timings.first_sentence_ts = time.time()
                 sentence = sentence.strip()
                 if not sentence:
                     continue
-                await self.sink.transcript("assistant", sentence, final=False)
                 tts_stream = self.tts.synthesize(sentence)
                 async for pcm in tts_stream:
                     if timings.first_audio_ts is None:
@@ -260,21 +217,13 @@ class AudioPipeline:
                         await self._set_state(PipelineState.SPEAKING)
                     await self.sink.audio(pcm)
                 tts_stream = None
-                spoken.append(sentence)
-            if spoken:
-                await self.sink.transcript("assistant", " ".join(spoken), final=True)
             if timings.first_audio_ts is not None:
                 await self.sink.speech_end()
             await self._set_state(PipelineState.LISTENING)
-            await self._route_dispatch()
         except asyncio.CancelledError:
             timings.interrupted = True
             await _aclose(tts_stream)
             await _aclose(chunks)
-            # A fully-streamed reply is already committed to history, dispatch tag
-            # included — route its handoff even when playback was barged into.
-            # Mid-stream aborts recorded nothing, so there is no dispatch to route.
-            await self._route_dispatch()
             raise
         except Exception:
             logger.exception("turn failed")
@@ -285,17 +234,6 @@ class AudioPipeline:
         finally:
             timings.end_ts = time.time()
             latency_log.info(timings.log_line())
-        if (
-            self._pending_proactive
-            and not self.muted
-            and self._sm.state is PipelineState.LISTENING
-        ):
-            await self._start_proactive()
-
-    async def _route_dispatch(self) -> None:
-        directive = self.engine.take_dispatch()
-        if directive and self.on_dispatch is not None:
-            await self.on_dispatch(directive)
 
     async def _abort_turn(self) -> None:
         task = self._turn_task

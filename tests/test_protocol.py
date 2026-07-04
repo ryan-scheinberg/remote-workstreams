@@ -1,34 +1,70 @@
 import pydantic
 import pytest
 
-from voicecode.events import Finding
-from voicecode.protocol import (
-    Approval,
-    Event,
-    Ready,
-    parse_client_message,
-    parse_server_message,
-)
+from voicecode import protocol
+
+CLIENT_MESSAGES = [
+    protocol.Hello(credential="cred-1"),
+    protocol.TextInput(text="hi"),
+    protocol.Mute(muted=True),
+    protocol.PlanStint(),
+    protocol.LaunchWorkstream(plan_id="p1"),
+    protocol.SendToWorkstream(workstream="ws-auth"),
+    protocol.CheckIn(workstream="ws-auth"),
+    protocol.Compact(),
+    protocol.Approval(approval_id="a1", approved=True),
+]
+
+SERVER_MESSAGES = [
+    protocol.Ready(),
+    protocol.State(state="thinking"),
+    protocol.Chat(role="assistant", text="hi there", ts="2026-07-03T12:00:00Z", final=True),
+    protocol.Chat(role="activity", text="Bash: git status", ts="2026-07-03T12:00:01Z", final=True),
+    protocol.SpeechEnd(),
+    protocol.Workstreams(
+        workstreams=[
+            protocol.WorkstreamCard(
+                name="ws-auth",
+                title="Wire the auth flow",
+                status="running",
+                last_activity="2026-07-03T12:00:00Z",
+                tail=["» do the thing", "Bash: git status"],
+            )
+        ]
+    ),
+    protocol.StintPlan(plan_id="p1", title="Wire the auth flow", text="Stint: Wire the auth flow"),
+    protocol.ApprovalRequest(approval_id="a1", session="s1", tool="Bash", summary="rm -rf /tmp/x"),
+    protocol.Error(message="nope"),
+]
 
 
-def test_client_message_roundtrip():
-    msg = Approval(gate_id="g1", approved=True)
-    assert parse_client_message(msg.model_dump_json()) == msg
+@pytest.mark.parametrize("msg", CLIENT_MESSAGES, ids=lambda m: m.type)
+def test_client_message_roundtrip(msg):
+    assert protocol.parse_client_message(msg.model_dump_json()) == msg
+
+
+@pytest.mark.parametrize("msg", SERVER_MESSAGES, ids=lambda m: f"{m.type}-{id(m)}")
+def test_server_message_roundtrip(msg):
+    assert protocol.parse_server_message(msg.model_dump_json()) == msg
 
 
 def test_ready_declares_audio_formats():
-    ready = Ready(session_id="s1")
+    ready = protocol.Ready()
     assert ready.mic_format.sample_rate == 16000
     assert ready.tts_format.sample_rate == 24000
     assert ready.mic_format.encoding == "pcm_s16le"
 
 
-def test_status_event_nests_in_server_message():
-    msg = Event(event=Finding(summary="The bug is in the retry loop."))
-    parsed = parse_server_message(msg.model_dump_json())
-    assert parsed.event.type == "finding"
-
-
 def test_client_message_rejects_server_types():
     with pytest.raises(pydantic.ValidationError):
-        parse_client_message('{"type": "ready", "session_id": "s1"}')
+        protocol.parse_client_message('{"type": "ready"}')
+
+
+def test_server_message_rejects_unknown_type():
+    with pytest.raises(pydantic.ValidationError):
+        protocol.parse_server_message('{"type": "event", "event": {}}')
+
+
+def test_bridge_era_messages_are_gone():
+    for name in ["Event", "Sessions", "SessionInfo", "SwitchSession", "Transcript"]:
+        assert not hasattr(protocol, name)

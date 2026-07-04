@@ -1,9 +1,11 @@
-"""REST: pairing, sessions, credentials, health. The pairing and session shapes
-are a frozen contract — the PWA unit builds against them exactly.
+"""REST: pairing, credentials, health, and the phone-approval relay endpoint.
+The pairing shapes are a frozen contract — the PWA builds against them exactly.
 """
 
 from __future__ import annotations
 
+import hmac
+import json
 from dataclasses import asdict
 from typing import Any
 
@@ -58,9 +60,28 @@ async def pair_finish(body: PairFinish, request: Request) -> dict:
     return {"credential": credential, "credential_id": credential_id}
 
 
-@router.get("/api/sessions", dependencies=[Depends(require_credential)])
-async def list_sessions(request: Request) -> dict:
-    return {"sessions": [s.model_dump() for s in request.app.state.store.list_sessions()]}
+@router.post("/approvals")
+async def approvals(request: Request) -> dict:
+    """Body is the raw PreToolUse hook JSON, relayed by hooks/ask_phone.py."""
+    token = request.headers.get("x-voicecode-token", "")
+    if not hmac.compare_digest(token, request.app.state.approvals_token):
+        raise HTTPException(status_code=403, detail="bad token")
+    payload = await request.json()
+    tool = str(payload.get("tool_name", ""))
+    tool_input = payload.get("tool_input")
+    if not isinstance(tool_input, dict):
+        tool_input = {}
+    if tool == "Bash":
+        summary = str(tool_input.get("command", ""))
+    else:
+        summary = f"{tool} {json.dumps(tool_input)[:120]}".strip()
+    try:
+        approved = await request.app.state.approvals.create(
+            str(payload.get("session_id", "")), tool, summary
+        )
+    except TimeoutError:
+        raise HTTPException(status_code=408, detail="approval timed out") from None
+    return {"decision": "allow" if approved else "deny"}
 
 
 @router.get("/api/credentials", dependencies=[Depends(require_credential)])

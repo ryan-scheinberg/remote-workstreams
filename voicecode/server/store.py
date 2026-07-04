@@ -1,32 +1,20 @@
-"""SQLite persistence (stdlib sqlite3, WAL): sessions, credentials, transcript log.
+"""SQLite persistence (stdlib sqlite3, WAL): device credentials, the convo session id,
+workstreams, and the plan/inject since-marker. Conversation content is NOT here —
+Claude Code's JSONL transcripts are the source of truth.
 
-One connection guarded by a lock — a single process, one row per committed turn.
+One connection guarded by a lock — a single process, low write rates.
 """
 
 from __future__ import annotations
 
-import json
 import sqlite3
 import threading
 import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
-
-from voicecode.protocol import SessionInfo
-
-DEFAULT_TITLE = "New session"
 
 _SCHEMA = """
-CREATE TABLE IF NOT EXISTS sessions (
-    id TEXT PRIMARY KEY,
-    title TEXT NOT NULL,
-    created_at REAL NOT NULL,
-    last_active REAL NOT NULL,
-    messages TEXT NOT NULL DEFAULT '[]',
-    execution_session_id TEXT
-);
 CREATE TABLE IF NOT EXISTS credentials (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -34,24 +22,37 @@ CREATE TABLE IF NOT EXISTS credentials (
     created_at REAL NOT NULL,
     revoked_at REAL
 );
-CREATE TABLE IF NOT EXISTS transcript (
-    session_id TEXT NOT NULL,
-    ts REAL NOT NULL,
-    role TEXT NOT NULL,
-    text TEXT NOT NULL
+CREATE TABLE IF NOT EXISTS convo (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    cc_session_id TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_transcript_session ON transcript (session_id, ts);
+CREATE TABLE IF NOT EXISTS workstreams (
+    name TEXT PRIMARY KEY,
+    cc_session_id TEXT NOT NULL,
+    window TEXT NOT NULL,
+    title TEXT NOT NULL,
+    plan_path TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    status TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS marker (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    last_line INTEGER NOT NULL
+);
+DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS transcript;
 """
 
 
 @dataclass
-class SessionRow:
-    id: str
+class WorkstreamRow:
+    name: str
+    cc_session_id: str
+    window: str
     title: str
+    plan_path: str
     created_at: float
-    last_active: float
-    messages: list[dict[str, Any]]
-    execution_session_id: str | None
+    status: str
 
 
 @dataclass
@@ -92,79 +93,44 @@ class Store:
         with self._lock:
             return self._conn.execute(sql, params).fetchall()
 
-    # ---- sessions ----
+    # ---- convo (single row: the one persistent conversation session) ----
 
-    def create_session(self, title: str = DEFAULT_TITLE) -> SessionRow:
-        now = time.time()
-        session_id = uuid.uuid4().hex[:12]
+    def get_convo_session(self) -> str | None:
+        row = self._fetchone("SELECT cc_session_id FROM convo WHERE id = 1")
+        return row["cc_session_id"] if row else None
+
+    def set_convo_session(self, cc_session_id: str) -> None:
         self._write(
-            "INSERT INTO sessions (id, title, created_at, last_active) VALUES (?, ?, ?, ?)",
-            (session_id, title, now, now),
-        )
-        return SessionRow(session_id, title, now, now, [], None)
-
-    @staticmethod
-    def _session(row: sqlite3.Row) -> SessionRow:
-        return SessionRow(
-            id=row["id"],
-            title=row["title"],
-            created_at=row["created_at"],
-            last_active=row["last_active"],
-            messages=json.loads(row["messages"]),
-            execution_session_id=row["execution_session_id"],
+            "INSERT OR REPLACE INTO convo (id, cc_session_id) VALUES (1, ?)", (cc_session_id,)
         )
 
-    def get_session(self, session_id: str) -> SessionRow | None:
-        row = self._fetchone("SELECT * FROM sessions WHERE id = ?", (session_id,))
-        return self._session(row) if row else None
+    # ---- workstreams ----
 
-    def most_recent_session(self) -> SessionRow | None:
-        row = self._fetchone("SELECT * FROM sessions ORDER BY last_active DESC LIMIT 1")
-        return self._session(row) if row else None
-
-    def list_sessions(self) -> list[SessionInfo]:
-        rows = self._fetchall(
-            "SELECT id, title, created_at, last_active FROM sessions ORDER BY last_active DESC"
-        )
-        return [SessionInfo(**dict(row)) for row in rows]
-
-    def save_messages(self, session_id: str, messages: list[dict[str, Any]]) -> None:
+    def add_workstream(
+        self, name: str, cc_session_id: str, window: str, title: str, plan_path: str
+    ) -> None:
         self._write(
-            "UPDATE sessions SET messages = ?, last_active = ? WHERE id = ?",
-            (json.dumps(messages), time.time(), session_id),
+            "INSERT OR REPLACE INTO workstreams"
+            " (name, cc_session_id, window, title, plan_path, created_at, status)"
+            " VALUES (?, ?, ?, ?, ?, ?, 'running')",
+            (name, cc_session_id, window, title, plan_path, time.time()),
         )
 
-    def set_execution_session(self, session_id: str, execution_session_id: str) -> None:
-        self._write(
-            "UPDATE sessions SET execution_session_id = ? WHERE id = ?",
-            (execution_session_id, session_id),
-        )
+    def list_workstreams(self) -> list[WorkstreamRow]:
+        rows = self._fetchall("SELECT * FROM workstreams ORDER BY created_at")
+        return [WorkstreamRow(**dict(row)) for row in rows]
 
-    def set_title_if_default(self, session_id: str, title: str) -> None:
-        self._write(
-            "UPDATE sessions SET title = ? WHERE id = ? AND title = ?",
-            (title, session_id, DEFAULT_TITLE),
-        )
+    def set_workstream_status(self, name: str, status: str) -> None:
+        self._write("UPDATE workstreams SET status = ? WHERE name = ?", (status, name))
 
-    def touch(self, session_id: str) -> None:
-        self._write(
-            "UPDATE sessions SET last_active = ? WHERE id = ?", (time.time(), session_id)
-        )
+    # ---- since-marker (convo transcript line count at the last plan/inject) ----
 
-    # ---- transcript log ----
+    def get_marker(self) -> int:
+        row = self._fetchone("SELECT last_line FROM marker WHERE id = 1")
+        return row["last_line"] if row else 0
 
-    def add_transcript(self, session_id: str, role: str, text: str) -> None:
-        self._write(
-            "INSERT INTO transcript (session_id, ts, role, text) VALUES (?, ?, ?, ?)",
-            (session_id, time.time(), role, text),
-        )
-
-    def get_transcript(self, session_id: str) -> list[dict[str, Any]]:
-        rows = self._fetchall(
-            "SELECT ts, role, text FROM transcript WHERE session_id = ? ORDER BY ts",
-            (session_id,),
-        )
-        return [dict(row) for row in rows]
+    def set_marker(self, last_line: int) -> None:
+        self._write("INSERT OR REPLACE INTO marker (id, last_line) VALUES (1, ?)", (last_line,))
 
     # ---- credentials ----
 

@@ -1,8 +1,12 @@
-"""WebSocket protocol between clients (PWA, local frontend) and the server.
+"""WebSocket protocol between the phone client and the server.
 
 Text frames carry exactly one JSON message from the models below. Binary frames carry
 raw audio: client→server is mic PCM, server→client is TTS PCM. Formats are declared
 in `Ready` so the client never guesses.
+
+Chat sourcing rule: assistant text, tool activity, and FINAL user text all render from
+the convo session's Claude Code transcript (the source of truth); the audio pipeline
+emits chat(role="user", final=False) only for STT interims.
 """
 
 from __future__ import annotations
@@ -10,8 +14,6 @@ from __future__ import annotations
 from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, Field, TypeAdapter
-
-from voicecode.events import StatusEvent
 
 
 class AudioFormat(BaseModel):
@@ -28,11 +30,10 @@ TTS_FORMAT = AudioFormat(sample_rate=24000)
 
 
 class Hello(BaseModel):
-    """First message on every connection. credential=None is only valid for pairing."""
+    """First message on every connection."""
 
     type: Literal["hello"] = "hello"
     credential: str | None = None
-    session_id: str | None = None  # None = resume most recent session, or start fresh
 
 
 class TextInput(BaseModel):
@@ -43,25 +44,57 @@ class TextInput(BaseModel):
 
 
 class Mute(BaseModel):
-    """While muted, proactive speech queues; it surfaces on unmute or in the Viewer."""
-
     type: Literal["mute"] = "mute"
     muted: bool
 
 
+class PlanStint(BaseModel):
+    """Run the ephemeral stint planner over the conversation since the last marker."""
+
+    type: Literal["plan_stint"] = "plan_stint"
+
+
+class LaunchWorkstream(BaseModel):
+    type: Literal["launch_workstream"] = "launch_workstream"
+    plan_id: str
+
+
+class SendToWorkstream(BaseModel):
+    """Route the latest conversation delta through the injector into a workstream."""
+
+    type: Literal["send_to_workstream"] = "send_to_workstream"
+    workstream: str
+
+
+class CheckIn(BaseModel):
+    """Have the convo session read a workstream's transcript tail and speak the status."""
+
+    type: Literal["check_in"] = "check_in"
+    workstream: str
+
+
+class Compact(BaseModel):
+    type: Literal["compact"] = "compact"
+
+
 class Approval(BaseModel):
     type: Literal["approval"] = "approval"
-    gate_id: str
+    approval_id: str
     approved: bool
 
 
-class SwitchSession(BaseModel):
-    type: Literal["switch_session"] = "switch_session"
-    session_id: str
-
-
 ClientMessage = Annotated[
-    Union[Hello, TextInput, Mute, Approval, SwitchSession],
+    Union[
+        Hello,
+        TextInput,
+        Mute,
+        PlanStint,
+        LaunchWorkstream,
+        SendToWorkstream,
+        CheckIn,
+        Compact,
+        Approval,
+    ],
     Field(discriminator="type"),
 ]
 
@@ -71,7 +104,6 @@ ClientMessage = Annotated[
 
 class Ready(BaseModel):
     type: Literal["ready"] = "ready"
-    session_id: str
     mic_format: AudioFormat = MIC_FORMAT
     tts_format: AudioFormat = TTS_FORMAT
 
@@ -81,18 +113,12 @@ class State(BaseModel):
     state: Literal["listening", "thinking", "speaking", "interrupted"]
 
 
-class Transcript(BaseModel):
-    type: Literal["transcript"] = "transcript"
-    role: Literal["user", "assistant"]
+class Chat(BaseModel):
+    type: Literal["chat"] = "chat"
+    role: Literal["user", "assistant", "activity"]
     text: str
+    ts: str
     final: bool
-
-
-class Event(BaseModel):
-    """A status event for the Workspace Viewer (approvals render as approve/deny)."""
-
-    type: Literal["event"] = "event"
-    event: StatusEvent
 
 
 class SpeechEnd(BaseModel):
@@ -101,16 +127,32 @@ class SpeechEnd(BaseModel):
     type: Literal["speech_end"] = "speech_end"
 
 
-class SessionInfo(BaseModel):
-    id: str
+class WorkstreamCard(BaseModel):
+    name: str
     title: str
-    created_at: float
-    last_active: float
+    status: Literal["running", "gone"]
+    last_activity: str
+    tail: list[str]
 
 
-class Sessions(BaseModel):
-    type: Literal["sessions"] = "sessions"
-    sessions: list[SessionInfo]
+class Workstreams(BaseModel):
+    type: Literal["workstreams"] = "workstreams"
+    workstreams: list[WorkstreamCard]
+
+
+class StintPlan(BaseModel):
+    type: Literal["stint_plan"] = "stint_plan"
+    plan_id: str
+    title: str
+    text: str
+
+
+class ApprovalRequest(BaseModel):
+    type: Literal["approval_request"] = "approval_request"
+    approval_id: str
+    session: str
+    tool: str
+    summary: str
 
 
 class Error(BaseModel):
@@ -119,7 +161,7 @@ class Error(BaseModel):
 
 
 ServerMessage = Annotated[
-    Union[Ready, State, Transcript, Event, SpeechEnd, Sessions, Error],
+    Union[Ready, State, Chat, SpeechEnd, Workstreams, StintPlan, ApprovalRequest, Error],
     Field(discriminator="type"),
 ]
 

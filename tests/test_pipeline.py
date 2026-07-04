@@ -1,5 +1,5 @@
-"""AudioPipeline behavior: turn flow, barge-in, typed input, proactive events,
-dispatch routing, latency logging. All fakes — no live providers, no audio devices."""
+"""AudioPipeline behavior: turn flow, barge-in, typed input, muting, latency logging.
+All fakes — no live providers, no audio devices, no tmux."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ from voicecode.adapters.stt import STTAdapter, TranscriptChunk
 from voicecode.adapters.tts import TTSAdapter
 from voicecode.audio.pipeline import AudioPipeline
 from voicecode.audio.state import PipelineState
-from voicecode.events import Completed, Progress
 
 LISTENING = PipelineState.LISTENING
 THINKING = PipelineState.THINKING
@@ -82,30 +81,22 @@ class FakeTTS(TTSAdapter):
         self.cancels += 1
 
 
-class FakeEngine:
-    """replies[i] is the sentence-chunk list for turn i (last one repeats)."""
+class FakeConvo:
+    """ConvoPort fake: replies[i] is the sentence list for turn i (last one repeats).
+    first_turn_gate parks the first turn before any sentence, like a slow session."""
 
     def __init__(
         self,
         replies: list[list[str]] | None = None,
-        dispatch_after_turn: str | None = None,
         first_turn_gate: asyncio.Event | None = None,
     ) -> None:
         self.replies = replies if replies is not None else [["Sure thing."]]
-        self.dispatch_after_turn = dispatch_after_turn
         self.first_turn_gate = first_turn_gate
         self.turns: list[str] = []
-        self.injected: list = []
-        self.dispatch: str | None = None
         self.closed_mid_turn = False
-        self.proactive_replies: list[list[str]] = []
-        self.proactive_calls = 0
 
-    def inject_events(self, events) -> None:
-        self.injected.extend(events)
-
-    async def turn(self, user_text: str):
-        self.turns.append(user_text)
+    async def turn(self, text: str):
+        self.turns.append(text)
         index = min(len(self.turns) - 1, len(self.replies) - 1)
         try:
             if self.first_turn_gate is not None and len(self.turns) == 1:
@@ -115,18 +106,6 @@ class FakeEngine:
         except (GeneratorExit, asyncio.CancelledError):
             self.closed_mid_turn = True
             raise
-        if self.dispatch_after_turn:
-            self.dispatch = self.dispatch_after_turn
-
-    async def proactive_turn(self):
-        self.proactive_calls += 1
-        if self.proactive_replies:
-            for part in self.proactive_replies.pop(0):
-                yield part
-
-    def take_dispatch(self) -> str | None:
-        directive, self.dispatch = self.dispatch, None
-        return directive
 
 
 class RecordingSink:
@@ -149,28 +128,31 @@ class RecordingSink:
         self.speech_ends += 1
 
 
-def build(engine=None, tts=None, on_dispatch=None):
+def assert_interims_only(sink: RecordingSink) -> None:
+    """The chat-sourcing rule: the sink only ever carries user STT interims."""
+    assert all(role == "user" and not final for role, _, final in sink.transcripts)
+
+
+def build(convo=None, tts=None):
     stt = ScriptedSTT()
     tts = tts or FakeTTS()
-    engine = engine or FakeEngine()
+    convo = convo or FakeConvo()
     sink = RecordingSink()
-    pipeline = AudioPipeline(stt, tts, engine, sink, on_dispatch=on_dispatch)
-    return pipeline, stt, tts, engine, sink
+    pipeline = AudioPipeline(stt, tts, convo, sink)
+    return pipeline, stt, tts, convo, sink
 
 
 async def test_full_voice_turn() -> None:
-    pipeline, stt, tts, engine, sink = build()
+    pipeline, stt, tts, convo, sink = build()
     task = asyncio.create_task(pipeline.run())
     stt.push(chunk("hello"))
     stt.push(chunk("hello there", is_final=True, speech_final=True))
     await wait_for(lambda: sink.states[-1:] == [LISTENING])
 
     assert sink.states == [THINKING, SPEAKING, LISTENING]
-    assert engine.turns == ["hello there"]
-    assert ("user", "hello", False) in sink.transcripts  # interim forwarded
-    assert ("user", "hello there", True) in sink.transcripts
-    assert ("assistant", "Sure thing.", False) in sink.transcripts
-    assert ("assistant", "Sure thing.", True) in sink.transcripts
+    assert convo.turns == ["hello there"]
+    assert sink.transcripts == [("user", "hello", False)]  # live caption only
+    assert_interims_only(sink)
     assert len(sink.audio_chunks) == 2
     assert sink.speech_ends == 1
     assert tts.synthesized == ["Sure thing."]
@@ -188,10 +170,37 @@ async def test_feed_reaches_stt() -> None:
     await asyncio.wait_for(task, 1)
 
 
+async def test_muted_feed_drops_frames() -> None:
+    pipeline, stt, _, _, _ = build()
+    task = asyncio.create_task(pipeline.run())
+    pipeline.set_muted(True)
+    await pipeline.feed(b"\x00\x01")
+    await asyncio.sleep(0.02)
+    assert stt.fed == []
+    pipeline.set_muted(False)
+    await pipeline.feed(b"\x02\x03")
+    await wait_for(lambda: stt.fed == [b"\x02\x03"])
+    await pipeline.close()
+    await asyncio.wait_for(task, 1)
+
+
+async def test_binary_flood_is_safe() -> None:
+    pipeline, stt, _, convo, sink = build()
+    task = asyncio.create_task(pipeline.run())
+    for _ in range(500):
+        await pipeline.feed(b"\xff" * 640)
+    stt.push(chunk("still works", is_final=True, speech_final=True))
+    await wait_for(lambda: sink.states[-1:] == [LISTENING])
+    assert len(stt.fed) == 500
+    assert convo.turns == ["still works"]
+    await pipeline.close()
+    await asyncio.wait_for(task, 1)
+
+
 async def test_barge_in() -> None:
-    engine = FakeEngine(replies=[["First sentence.", "Second sentence."], ["Okay."]])
+    convo = FakeConvo(replies=[["First sentence.", "Second sentence."], ["Okay."]])
     tts = FakeTTS(hold_first=True)
-    pipeline, stt, _, _, sink = build(engine=engine, tts=tts)
+    pipeline, stt, _, _, sink = build(convo=convo, tts=tts)
     task = asyncio.create_task(pipeline.run())
 
     stt.push(chunk("start the demo", is_final=True, speech_final=True))
@@ -202,19 +211,16 @@ async def test_barge_in() -> None:
     await wait_for(lambda: INTERRUPTED in sink.states)
 
     assert tts.cancels >= 1
-    assert engine.closed_mid_turn  # in-flight engine generator closed cleanly
+    assert convo.closed_mid_turn  # the sentence stream was abandoned cleanly
     await asyncio.sleep(0.02)
     assert len(sink.audio_chunks) == audio_before  # audio stopped immediately
 
     stt.push(chunk("wait stop that", is_final=True, speech_final=True))
     await wait_for(lambda: sink.speech_ends == 1 and sink.states[-1] is LISTENING)
 
-    assert engine.turns == ["start the demo", "wait stop that"]
+    assert convo.turns == ["start the demo", "wait stop that"]
     assert sink.states == [THINKING, SPEAKING, INTERRUPTED, THINKING, SPEAKING, LISTENING]
-    # only the completed turn's reply committed as final assistant text — never the
-    # interrupted one, and never twice
-    finals = [t for t in sink.transcripts if t[0] == "assistant" and t[2]]
-    assert finals == [("assistant", "Okay.", True)]
+    assert_interims_only(sink)
 
     await pipeline.close()
     await asyncio.wait_for(task, 1)
@@ -222,7 +228,7 @@ async def test_barge_in() -> None:
 
 async def test_barge_in_noise_returns_to_listening() -> None:
     tts = FakeTTS(hold_first=True)
-    pipeline, stt, _, engine, sink = build(engine=FakeEngine(replies=[["Reply."]]), tts=tts)
+    pipeline, stt, _, convo, sink = build(convo=FakeConvo(replies=[["Reply."]]), tts=tts)
     task = asyncio.create_task(pipeline.run())
 
     stt.push(chunk("hi there", is_final=True, speech_final=True))
@@ -232,7 +238,7 @@ async def test_barge_in_noise_returns_to_listening() -> None:
     stt.push(chunk("", is_final=True, speech_final=True))  # endpoints to nothing
     await wait_for(lambda: sink.states[-1:] == [LISTENING])
 
-    assert engine.turns == ["hi there"]  # no second turn from noise
+    assert convo.turns == ["hi there"]  # no second turn from noise
     assert sink.states == [THINKING, SPEAKING, INTERRUPTED, LISTENING]
 
     await pipeline.close()
@@ -241,8 +247,8 @@ async def test_barge_in_noise_returns_to_listening() -> None:
 
 async def test_speech_during_thinking_supersedes_turn() -> None:
     gate = asyncio.Event()  # never set: first turn parks before yielding
-    engine = FakeEngine(replies=[["Old reply."], ["New reply."]], first_turn_gate=gate)
-    pipeline, stt, tts, _, sink = build(engine=engine)
+    convo = FakeConvo(replies=[["Old reply."], ["New reply."]], first_turn_gate=gate)
+    pipeline, stt, tts, _, sink = build(convo=convo)
     task = asyncio.create_task(pipeline.run())
 
     stt.push(chunk("first question", is_final=True, speech_final=True))
@@ -250,8 +256,8 @@ async def test_speech_during_thinking_supersedes_turn() -> None:
     stt.push(chunk("second question", is_final=True, speech_final=True))
     await wait_for(lambda: sink.states[-1:] == [LISTENING])
 
-    assert engine.turns == ["first question", "second question"]
-    assert engine.closed_mid_turn
+    assert convo.turns == ["first question", "second question"]
+    assert convo.closed_mid_turn
     assert tts.synthesized == ["New reply."]
     assert sink.states == [THINKING, SPEAKING, LISTENING]  # no INTERRUPTED mid-THINKING
 
@@ -260,19 +266,19 @@ async def test_speech_during_thinking_supersedes_turn() -> None:
 
 
 async def test_typed_input_runs_turn_without_stt() -> None:
-    pipeline, _, _, engine, sink = build()
+    pipeline, _, _, convo, sink = build()
     await pipeline.text("  deploy it  ")
     await wait_for(lambda: sink.states[-1:] == [LISTENING])
-    assert engine.turns == ["deploy it"]
-    assert ("user", "deploy it", True) in sink.transcripts
+    assert convo.turns == ["deploy it"]
+    assert sink.transcripts == []  # final user text reaches chat via the transcript
     assert sink.speech_ends == 1
     await pipeline.close()
 
 
 async def test_typed_input_interrupts_speech() -> None:
-    engine = FakeEngine(replies=[["Long reply."], ["Second."]])
+    convo = FakeConvo(replies=[["Long reply."], ["Second."]])
     tts = FakeTTS(hold_first=True)
-    pipeline, stt, _, _, sink = build(engine=engine, tts=tts)
+    pipeline, stt, _, _, sink = build(convo=convo, tts=tts)
     task = asyncio.create_task(pipeline.run())
 
     stt.push(chunk("talk to me", is_final=True, speech_final=True))
@@ -281,195 +287,27 @@ async def test_typed_input_interrupts_speech() -> None:
     await wait_for(lambda: sink.speech_ends == 1 and sink.states[-1] is LISTENING)
 
     assert INTERRUPTED in sink.states
-    assert engine.turns == ["talk to me", "never mind"]
+    assert convo.turns == ["talk to me", "never mind"]
 
     await pipeline.close()
     await asyncio.wait_for(task, 1)
 
 
-async def test_proactive_on_completed_event() -> None:
-    engine = FakeEngine()
-    engine.proactive_replies = [["The build finished."]]
-    pipeline, _, _, _, sink = build(engine=engine)
-    event = Completed(summary="The build finished.")
-
-    await pipeline.on_events([event])
-    await wait_for(lambda: sink.states[-1:] == [LISTENING])
-
-    assert engine.injected == [event]  # always injected
-    assert engine.proactive_calls == 1
-    assert sink.speech_ends == 1
-    assert ("assistant", "The build finished.", True) in sink.transcripts
-    await pipeline.close()
-
-
-async def test_progress_event_injected_but_silent() -> None:
-    pipeline, _, _, engine, sink = build()
-    await pipeline.on_events([Progress(summary="Still compiling.")])
-    await asyncio.sleep(0.02)
-    assert len(engine.injected) == 1
-    assert engine.proactive_calls == 0
-    assert sink.states == []
-    await pipeline.close()
-
-
-async def test_muted_queues_proactive_until_unmute() -> None:
-    engine = FakeEngine()
-    engine.proactive_replies = [["Done now."]]
-    pipeline, _, _, _, sink = build(engine=engine)
-
-    pipeline.set_muted(True)
-    await pipeline.on_events([Completed(summary="Done now.")])
-    await asyncio.sleep(0.02)
-    assert len(engine.injected) == 1  # injected even while muted
-    assert engine.proactive_calls == 0
-    assert sink.states == []
-
-    pipeline.set_muted(False)
-    await wait_for(lambda: sink.speech_ends == 1)
-    assert engine.proactive_calls == 1
-    await pipeline.close()
-
-
-async def test_rapid_double_unmute_fires_proactive_once() -> None:
-    engine = FakeEngine()
-    engine.proactive_replies = [["All done."]]
-    pipeline, _, _, _, sink = build(engine=engine)
-
-    pipeline.set_muted(True)
-    await pipeline.on_events([Completed(summary="All done.")])
-    pipeline.set_muted(False)
-    pipeline.set_muted(False)  # second rapid unmute must not spawn a turn that aborts the first
-
-    await wait_for(lambda: sink.speech_ends == 1)
-    await asyncio.sleep(0.02)
-    assert engine.proactive_calls == 1
-    assert ("assistant", "All done.", True) in sink.transcripts
-    await pipeline.close()
-
-
-async def test_proactive_with_nothing_to_say_returns_to_listening() -> None:
-    pipeline, _, _, engine, sink = build()  # proactive_replies empty → yields nothing
-    await pipeline.on_events([Completed(summary="Quiet finish.")])
-    await wait_for(lambda: sink.states[-1:] == [LISTENING])
-    assert sink.states == [THINKING, LISTENING]
-    assert sink.audio_chunks == []
-    assert sink.speech_ends == 0
-    await pipeline.close()
-
-
-async def test_event_during_turn_speaks_after_turn_ends() -> None:
-    engine = FakeEngine(replies=[["Answering."]])
-    engine.proactive_replies = [["Build done."]]
-    tts = FakeTTS(hold_first=True)
-    pipeline, stt, _, _, sink = build(engine=engine, tts=tts)
+async def test_whitespace_endpoint_commits_nothing() -> None:
+    pipeline, stt, _, convo, sink = build()
     task = asyncio.create_task(pipeline.run())
-
-    stt.push(chunk("question", is_final=True, speech_final=True))
-    await wait_for(lambda: SPEAKING in sink.states)
-    await pipeline.on_events([Completed(summary="Build done.")])  # mid-turn: queued
-    assert engine.proactive_calls == 0
-
-    tts.release()  # let the current turn finish
-    await wait_for(lambda: engine.proactive_calls == 1 and sink.speech_ends == 2)
-
-    await pipeline.close()
-    await asyncio.wait_for(task, 1)
-
-
-async def test_dispatch_routed_after_turn() -> None:
-    dispatches: list[str] = []
-
-    async def on_dispatch(directive: str) -> None:
-        dispatches.append(directive)
-
-    engine = FakeEngine(dispatch_after_turn="fix the failing tests")
-    pipeline, _, _, _, _ = build(engine=engine, on_dispatch=on_dispatch)
-    await pipeline.text("please fix the tests")
-    await wait_for(lambda: dispatches == ["fix the failing tests"])
-    await pipeline.close()
-
-
-async def test_mid_stream_barge_in_has_no_dispatch() -> None:
-    # The real engine sets its dispatch only when turn() runs to exhaustion, so a
-    # reply interrupted mid-stream hands nothing off — and nothing leaks forward.
-    dispatches: list[str] = []
-
-    async def on_dispatch(directive: str) -> None:
-        dispatches.append(directive)
-
-    engine = FakeEngine(replies=[["A.", "B."], ["Fine."]], dispatch_after_turn="directive")
-    tts = FakeTTS(hold_first=True)
-    pipeline, stt, _, _, sink = build(engine=engine, tts=tts, on_dispatch=on_dispatch)
-    task = asyncio.create_task(pipeline.run())
-
-    stt.push(chunk("do the thing", is_final=True, speech_final=True))
-    await wait_for(lambda: SPEAKING in sink.states)
-    stt.push(chunk("no wait"))  # barge-in before the turn completes
-    await wait_for(lambda: INTERRUPTED in sink.states)
-
-    assert engine.closed_mid_turn
-    assert dispatches == []
-    assert engine.dispatch is None  # never set: the turn didn't reach exhaustion
-
-    await pipeline.close()
-    await asyncio.wait_for(task, 1)
-
-
-class HoldingSpeechEndSink(RecordingSink):
-    """Parks speech_end, simulating playback still draining after the reply streamed."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.speech_end_reached = asyncio.Event()
-
-    async def speech_end(self) -> None:
-        self.speech_end_reached.set()
-        await asyncio.Event().wait()  # hold until cancelled
-
-
-async def test_dispatch_routes_when_barge_in_hits_after_stream_end() -> None:
-    # Once the reply fully streams, it is committed to history dispatch tag and all;
-    # a barge-in during the playback tail must still route the handoff, or the model
-    # would remember delegating work that never started.
-    dispatches: list[str] = []
-
-    async def on_dispatch(directive: str) -> None:
-        dispatches.append(directive)
-
-    stt = ScriptedSTT()
-    engine = FakeEngine(replies=[["On it."]], dispatch_after_turn="run the tests")
-    sink = HoldingSpeechEndSink()
-    pipeline = AudioPipeline(stt, FakeTTS(), engine, sink, on_dispatch=on_dispatch)
-    task = asyncio.create_task(pipeline.run())
-
-    stt.push(chunk("kick it off", is_final=True, speech_final=True))
-    await sink.speech_end_reached.wait()  # reply fully streamed, playback draining
-    stt.push(chunk("actually wait"))  # late barge-in
-    await wait_for(lambda: INTERRUPTED in sink.states)
-
-    assert dispatches == ["run the tests"]
-    assert engine.dispatch is None
-
-    await pipeline.close()
-    await asyncio.wait_for(task, 1)
-
-
-async def test_noise_endpoint_ignored() -> None:
-    pipeline, stt, _, engine, sink = build()
-    task = asyncio.create_task(pipeline.run())
-    stt.push(chunk("", is_final=True, speech_final=True))
+    stt.push(chunk("   ", is_final=True, speech_final=True))
     await asyncio.sleep(0.02)
-    assert engine.turns == []
+    assert convo.turns == []
     assert sink.states == []
     await pipeline.close()
     await asyncio.wait_for(task, 1)
 
 
 async def test_close_cancels_inflight_turn() -> None:
-    engine = FakeEngine(replies=[["Held reply."]])
+    convo = FakeConvo(replies=[["Held reply."]])
     tts = FakeTTS(hold_first=True)
-    pipeline, stt, _, _, sink = build(engine=engine, tts=tts)
+    pipeline, stt, _, _, sink = build(convo=convo, tts=tts)
     task = asyncio.create_task(pipeline.run())
 
     stt.push(chunk("hello", is_final=True, speech_final=True))
@@ -477,7 +315,7 @@ async def test_close_cancels_inflight_turn() -> None:
     await pipeline.close()
     await asyncio.wait_for(task, 1)
     assert tts.cancels >= 1
-    assert engine.closed_mid_turn
+    assert convo.closed_mid_turn
 
 
 async def test_latency_logged_per_turn(caplog) -> None:
@@ -496,7 +334,7 @@ async def test_latency_logged_per_turn(caplog) -> None:
     assert data["kind"] == "voice"
     assert data["endpoint_ts"] is not None
     assert data["transcript_ts"] is not None
-    assert data["engine_first_chunk_ts"] is not None
+    assert data["first_sentence_ts"] is not None
     assert data["first_audio_ts"] is not None
     assert data["endpoint_to_first_audio_ms"] >= 0
     assert data["interrupted"] is False
@@ -505,7 +343,7 @@ async def test_latency_logged_per_turn(caplog) -> None:
 async def test_interrupted_turn_logged(caplog) -> None:
     caplog.set_level(logging.INFO, logger="voicecode.latency")
     tts = FakeTTS(hold_first=True)
-    pipeline, stt, _, _, sink = build(engine=FakeEngine(replies=[["Held."]]), tts=tts)
+    pipeline, stt, _, _, sink = build(convo=FakeConvo(replies=[["Held."]]), tts=tts)
     task = asyncio.create_task(pipeline.run())
 
     stt.push(chunk("hello", is_final=True, speech_final=True))
