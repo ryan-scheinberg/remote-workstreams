@@ -1,0 +1,195 @@
+import asyncio
+import uuid
+from pathlib import Path
+
+import pytest
+
+from voicecode.substrate import SessionSpec, Substrate, Tmux, slug
+
+HOME = Path("/Users/ryanscheinberg")
+
+CONVO = SessionSpec(name="convo", model="fable", effort="low", display_name="convo")
+
+
+class FakeTmux:
+    """Duck-typed tmux double: records every call; window_exists is scripted."""
+
+    def __init__(self, existing_windows: set[str] | None = None) -> None:
+        self.calls: list[tuple] = []
+        self.existing_windows = existing_windows if existing_windows is not None else set()
+
+    async def ensure_session(self, name: str) -> None:
+        self.calls.append(("ensure_session", name))
+
+    async def new_window(self, session: str, name: str, cwd: Path) -> None:
+        self.calls.append(("new_window", session, name, cwd))
+
+    async def send_line(self, window: str, text: str) -> None:
+        self.calls.append(("send_line", window, text))
+
+    async def paste(self, window: str, text: str) -> None:
+        self.calls.append(("paste", window, text))
+
+    async def type_line(self, window: str, text: str) -> None:
+        self.calls.append(("type_line", window, text))
+
+    async def kill_window(self, window: str) -> None:
+        self.calls.append(("kill_window", window))
+
+    async def window_exists(self, window: str) -> bool:
+        self.calls.append(("window_exists", window))
+        return window in self.existing_windows
+
+
+class RecordingTmux(Tmux):
+    """Real Tmux with the subprocess layer replaced; has-session exit code scripted."""
+
+    def __init__(self, has_session_code: int = 0) -> None:
+        self.runs: list[tuple] = []
+        self.has_session_code = has_session_code
+
+    async def _run(self, *args: str, stdin: bytes | None = None) -> tuple[int, str]:
+        self.runs.append((args, stdin))
+        if args[0] == "has-session":
+            return self.has_session_code, ""
+        return 0, ""
+
+
+def test_slug():
+    assert slug("/Users/ryanscheinberg") == "-Users-ryanscheinberg"
+
+
+def test_transcript_dir():
+    sub = Substrate(FakeTmux(), home=HOME)
+    expected = Path("/Users/ryanscheinberg/.claude/projects/-Users-ryanscheinberg")
+    assert sub.transcript_dir == expected
+
+
+async def test_spawn_full_options():
+    fake = FakeTmux()
+    sub = Substrate(fake, home=HOME)
+    spec = SessionSpec(
+        name="ws-auth",
+        model="fable",
+        effort="xhigh",
+        display_name="ws-auth",
+        settings_file=Path("/tmp/ws-settings.json"),
+        plugin_dir=Path("/Users/ryanscheinberg/plugins/voice-code"),
+        initial_prompt="/voice-code:role-root plan in stint-3.md",
+    )
+    session = await sub.spawn(spec)
+
+    uuid.UUID(session.session_id)  # a real minted uuid
+    assert session.window == "voice:ws-auth"
+    assert session.transcript == sub.transcript_dir / f"{session.session_id}.jsonl"
+    assert session.spec is spec
+
+    expected = (
+        f"command claude --session-id {session.session_id} --model fable --effort xhigh"
+        " -n ws-auth --settings /tmp/ws-settings.json"
+        " --plugin-dir /Users/ryanscheinberg/plugins/voice-code"
+        " '/voice-code:role-root plan in stint-3.md'"
+    )
+    assert fake.calls == [
+        ("ensure_session", "voice"),
+        ("new_window", "voice", "ws-auth", HOME),
+        ("send_line", "voice:ws-auth", expected),
+    ]
+
+
+async def test_spawn_minimal():
+    fake = FakeTmux()
+    sub = Substrate(fake, home=HOME)
+    session = await sub.spawn(CONVO)
+
+    expected = f"command claude --session-id {session.session_id} --model fable --effort low -n convo"
+    assert fake.calls[-1] == ("send_line", "voice:convo", expected)
+
+
+async def test_spawn_resume_uses_resume_flag():
+    fake = FakeTmux()
+    sub = Substrate(fake, home=HOME)
+    spec = SessionSpec(name="convo", model="fable", effort="low", display_name="convo", resume=True)
+    sid = "11111111-2222-3333-4444-555555555555"
+    session = await sub.spawn(spec, session_id=sid)
+
+    expected = f"command claude --resume {sid} --model fable --effort low -n convo"
+    assert fake.calls[-1] == ("send_line", "voice:convo", expected)
+    assert session.session_id == sid
+    assert session.transcript == sub.transcript_dir / f"{sid}.jsonl"
+
+
+async def test_spawn_resume_requires_session_id():
+    sub = Substrate(FakeTmux(), home=HOME)
+    spec = SessionSpec(name="convo", model="fable", effort="low", display_name="convo", resume=True)
+    with pytest.raises(ValueError):
+        await sub.spawn(spec)
+
+
+async def test_send_pastes_into_window():
+    fake = FakeTmux()
+    sub = Substrate(fake, home=HOME)
+    session = await sub.spawn(CONVO)
+    await sub.send(session, "line one\nline two `$HOME`")
+    assert fake.calls[-1] == ("paste", "voice:convo", "line one\nline two `$HOME`")
+
+
+async def test_slash_is_typed_not_pasted():
+    fake = FakeTmux()
+    sub = Substrate(fake, home=HOME)
+    session = await sub.spawn(CONVO)
+    await sub.slash(session, "/compact")
+    assert fake.calls[-1] == ("type_line", "voice:convo", "/compact")
+    assert not [call for call in fake.calls if call[0] == "paste"]
+
+
+async def test_alive_and_kill():
+    fake = FakeTmux(existing_windows={"voice:convo"})
+    sub = Substrate(fake, home=HOME)
+    session = await sub.spawn(CONVO)
+    assert await sub.alive(session) is True
+    fake.existing_windows.clear()
+    assert await sub.alive(session) is False
+    await sub.kill(session)
+    assert fake.calls[-1] == ("kill_window", "voice:convo")
+
+
+async def test_paste_sequence_order(monkeypatch):
+    tmux = RecordingTmux()
+
+    async def record_sleep(seconds: float) -> None:
+        tmux.runs.append((("sleep", str(seconds)), None))
+
+    monkeypatch.setattr(asyncio, "sleep", record_sleep)
+    await tmux.paste("voice:convo", 'a\nb `x` "q" $HOME')
+
+    assert tmux.runs == [
+        (("load-buffer", "-"), b'a\nb `x` "q" $HOME'),
+        (("paste-buffer", "-p", "-d", "-t", "voice:convo"), None),
+        (("sleep", "0.5"), None),
+        (("send-keys", "-t", "voice:convo", "Enter"), None),
+    ]
+
+
+async def test_type_line_sends_literal_keystrokes():
+    tmux = RecordingTmux()
+    await tmux.type_line("voice:convo", "/compact")
+    assert [run[0] for run in tmux.runs] == [
+        ("send-keys", "-t", "voice:convo", "-l", "/compact"),
+        ("send-keys", "-t", "voice:convo", "Enter"),
+    ]
+
+
+async def test_ensure_session_creates_when_missing():
+    tmux = RecordingTmux(has_session_code=1)
+    await tmux.ensure_session("voice")
+    assert tmux.runs[0][0] == ("has-session", "-t", "voice")
+    new_session = tmux.runs[1][0]
+    assert new_session[:8] == ("new-session", "-d", "-s", "voice", "-x", "220", "-y", "50")
+    assert new_session[8] == "-c"
+
+
+async def test_ensure_session_noop_when_present():
+    tmux = RecordingTmux(has_session_code=0)
+    await tmux.ensure_session("voice")
+    assert [run[0][0] for run in tmux.runs] == ["has-session"]
