@@ -13,16 +13,16 @@ v5's rule: **every model interaction is a real interactive Claude Code session.*
 All sessions live in one tmux server session (`voice`). The Python service talks **only to tmux and the filesystem**:
 
 - **Write**: `tmux send-keys` / `load-buffer`+`paste-buffer` (multiline-safe) into a window.
-- **Read**: never scrape the TUI for content. Claude Code writes every session transcript as JSONL under `~/.claude/projects/<cwd-slug>/`; the service tails those files for replies, status, and chat rendering. `capture-pane` is reserved for the raw-terminal view and prompt-state detection fallback.
+- **Read**: never scrape the TUI for content. Claude Code writes every session transcript as JSONL under `~/.claude/projects/<cwd-slug>/`; the service tails those files for replies, status, and chat rendering. `capture-pane` exists only for the raw-terminal view.
 - **Attach**: any terminal (Warp today, anything tomorrow) runs `tmux attach -t voice`. The system neither knows nor cares which glass is open. When you come back to the laptop, the sessions are just *there*, clean, yours.
 
-Session↔transcript mapping: each session gets its own working directory (convo: the voice-code data dir; workstreams: their own repo/worktree), so cwd-slug → JSONL directory is 1:1 and the newest file after spawn is the session. Pin this in a spike before building on it.
+Session↔transcript mapping: every session starts at `~` — workstreams included; `/role-root` spawns its subagents into the right repos itself — so all transcripts land in one `~/.claude/projects/<home-slug>/` directory. The service identifies a session's JSONL as the file that appears after its spawn; the milestone-0 spike pins this.
 
 ## The session roster
 
 | Session | Model / effort | Lifetime | Role |
 |---|---|---|---|
-| `voice:convo` | Fable 5, **low** | persistent | The conversation. A dedicated skill (`role-convo`) makes it a voice-register interlocutor: short spoken turns, no markdown in speech, tools available but *discouraged* — answer from knowledge, don't spelunk, never do workstream-sized work inline. |
+| `voice:convo` | Fable 5, **low** | persistent | The conversation. A dedicated skill (`role-convo`) makes it a voice-register interlocutor: short spoken turns, no markdown in speech, tools welcome when they're the quick path. Not a tool ban — an orientation: clear success criteria, stay efficient, workstream-sized work goes to workstreams. |
 | stint planner | Opus 4.8, **high** | ephemeral | Reads the convo transcript since the last stint → writes a summarized stint plan file → session closes. |
 | `voice:ws-<name>` | Fable 5, **xhigh** | until shipped | An execution session opened with `/role-root` + the stint plan. Appears in the UI as a **workstream** card and in tmux as a window. |
 | injector | Opus 4.8, **high** | ephemeral | Takes the latest convo delta + a target workstream → distills a clean directive → `send-keys` into that workstream → closes. |
@@ -40,13 +40,13 @@ The convo session is the product's soul; `role-convo` is the highest-risk design
 ## Scope
 
 ### In (v5 first pass)
-- tmux substrate module: spawn/inject/tail/close, session registry, cwd-per-session mapping
+- tmux substrate module: spawn/inject/tail/close, session registry, spawn→transcript mapping
 - `role-convo` skill + hand-run evaluation of its register and restraint
 - Voice pipeline (kept from v4: Deepgram STT, VAD/endpointing, sentence-chunked Cartesia TTS, barge-in) rewired to the convo session; ambient Mac mic mode
 - Server (kept skeleton: FastAPI, launchd, auth chain, SQLite) with the new WS protocol: chat stream, workstream cards, buttons
 - PWA rework: persistent chat, Plan-stint / Send-to-workstream / Check-in / Compact buttons, workstream cards with live tails, approvals
 - Planner + injector passthrough flows and their skills (`role-stint-plan`, `role-inject`)
-- Approval surfacing via a **PreToolUse hook** shipped by voice-code: installed into workstream sessions, it POSTs gated tool calls to the service and waits for the phone verdict (timeout → fall through to the normal terminal dialog). Native hooks, not scraping. Pane-scrape detection is the fallback if the hook route hits a wall.
+- Approval surfacing as a **general phone-approval relay** — hit a hook → end up asking on the phone, whatever the user's hook setup looks like. The service exposes an approvals endpoint; voice-code ships one small client (`ask-phone`) that reads hook JSON on stdin, POSTs, waits for the verdict, and prints a permission decision. Workstream sessions get a PreToolUse hook wired to it out of the box, and a user's existing hooks (Ryan's bash gate, anyone's) can exec the same client. No verdict in time → the client prints no decision and Claude Code's native prompt takes over — that's built-in hook semantics, not fallback code we write.
 - Deploy plugin updated: tmux install check, no Anthropic key step, bootstrap of the `voice` tmux session
 
 ### Out
@@ -80,6 +80,7 @@ The elegance bar: after the pivot, a reader should find **no trace of the dual-l
 
 ## Testing & Observability
 
+- **Build optimistically**: one primary path per problem, no fallback code until testing — agent-run or Ryan's UAT — proves the primary path broken. Fallbacks that exist "just in case" are the leftover crap this brief exists to prevent.
 - Substrate spike is milestone 0: prove inject (multiline, bracketed paste), transcript tail, session mapping, and the hook-based approval round-trip with throwaway scripts **before** the build.
 - Unit tests mock at the tmux boundary (a `FakeTmux`) and use fixture JSONL transcripts; no test launches a real Claude Code session.
 - One gated integration test that does drive a real `voice:convo` session end-to-end (text in → transcript out), run manually.
@@ -93,6 +94,6 @@ The elegance bar: after the pivot, a reader should find **no trace of the dual-l
 
 - **Transcript JSONL is an undocumented internal format** — pin the parsing behind one module with defensive tests; expect breakage on Claude Code updates; the deploy skill should smoke-test it post-update.
 - **TUI injection quirks** (input box state, paste bracketing, a session mid-permission-dialog swallowing input) — milestone-0 spike; queueing behavior of Claude Code's input box is the friend here.
-- **Hook-based approvals** assume a PreToolUse hook can defer to an external verdict with acceptable UX; if not, fall back to pane-state detection or laptop-only approvals for v1.
-- **role-convo restraint** — can Fable low reliably *not* burn minutes on tools mid-conversation? Skill design + hand evals; worst case the skill hard-forbids tools and check-ins become a button-only flow.
+- **Hook-based approvals** assume a hook can block on an external verdict with acceptable UX — proven or killed in the milestone-0 spike; nothing else gets built ahead of that answer.
+- **role-convo efficiency** — the skill orients, it doesn't ban: use tools when they're the quick path, stay conversational otherwise, with success criteria stated plainly (small skill, like the other roles). Hand evals confirm register and pace before plumbing.
 - **/compact and transcript continuity** — verify the JSONL tail survives compaction sanely.
