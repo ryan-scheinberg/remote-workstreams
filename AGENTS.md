@@ -5,7 +5,7 @@ Voice and phone front-end over **real, interactive Claude Code sessions**: every
 ## State
 
 - v5 built 2026-07-03, replacing the v4 pass the same week (context in the brief). All tests green, ruff clean, cleanup ledger executed.
-- NOT yet done: any real deploy (Tailscale still not installed on this Mac), device testing on an iPhone, live Cartesia traffic (no account/key exists yet). The brief's gated real-session test exists (`tests/test_live_convo.py`, skipped unless `VOICECODE_LIVE=1`) but has **never been executed against a live session** — it spawns a real haiku CC session in tmux session `voice-qa`.
+- NOT yet done: any real deploy (Tailscale still not installed on this Mac), device testing on an iPhone, live Cartesia traffic (no account/key exists yet). The brief's gated real-session test (`tests/test_live_convo.py`, skipped unless `VOICECODE_LIVE=1`) was run once on 2026-07-03 and **passed** — it spawns a real haiku CC session in tmux session `voice-qa`, so the exact production convo spec (fable/low) has not itself been live-driven through the test.
 - GitHub remote not created; intended home `github.com/ryan-scheinberg/voice-code`, GPLv3. Everything stays local until Ryan says otherwise.
 
 ## Commands
