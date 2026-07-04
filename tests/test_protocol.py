@@ -62,9 +62,4 @@ def test_client_message_rejects_server_types():
 
 def test_server_message_rejects_unknown_type():
     with pytest.raises(pydantic.ValidationError):
-        protocol.parse_server_message('{"type": "event", "event": {}}')
-
-
-def test_bridge_era_messages_are_gone():
-    for name in ["Event", "Sessions", "SessionInfo", "SwitchSession", "Transcript"]:
-        assert not hasattr(protocol, name)
+        protocol.parse_server_message('{"type": "bogus"}')

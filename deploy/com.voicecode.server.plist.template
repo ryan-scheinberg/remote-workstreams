@@ -33,6 +33,9 @@
         <string>__HOME__</string>
         <key>VOICECODE_PORT</key>
         <string>__PORT__</string>
+        <!-- launchd's default PATH misses Homebrew; the service spawns tmux by name. -->
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     </dict>
 </dict>
 </plist>

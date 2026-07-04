@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from voicecode import events, protocol
+from voicecode import protocol
 
 WEB = Path(__file__).resolve().parent.parent / "voicecode" / "web"
 REQUIRED = [
@@ -46,7 +46,6 @@ def _message_types(union) -> set[str]:
 
 CLIENT_TYPES = _message_types(protocol.ClientMessage)
 SERVER_TYPES = _message_types(protocol.ServerMessage)
-EVENT_TYPES = _message_types(events.StatusEvent)
 PIPELINE_STATES = set(typing.get_args(protocol.State.model_fields["state"].annotation))
 
 
@@ -67,7 +66,7 @@ def test_worklet_loaded_by_name():
 
 def test_every_protocol_literal_appears_in_js():
     js = _js()
-    for literal in CLIENT_TYPES | SERVER_TYPES | EVENT_TYPES | PIPELINE_STATES:
+    for literal in CLIENT_TYPES | SERVER_TYPES | PIPELINE_STATES:
         assert f'"{literal}"' in js, f'protocol literal "{literal}" never appears in the JS'
 
 

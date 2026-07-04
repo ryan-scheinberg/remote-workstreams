@@ -13,6 +13,8 @@ PORT="${VOICECODE_PORT:-8400}"
 
 command -v uv >/dev/null 2>&1 || { echo "error=uv-missing hint=https://docs.astral.sh/uv/"; exit 1; }
 UV="$(command -v uv)"
+# The service bootstraps the "voice" tmux session at start; without tmux it can't boot.
+command -v tmux >/dev/null 2>&1 || { echo "error=tmux-missing hint=brew install tmux"; exit 1; }
 [ -f "$TEMPLATE" ] || { echo "error=template-missing path=$TEMPLATE"; exit 1; }
 
 (cd "$REPO" && uv sync)

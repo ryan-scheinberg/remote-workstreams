@@ -58,7 +58,7 @@ The convo session is the product's soul; `role-convo` is the highest-risk design
 
 Measure, don't promise. Instrument endpoint → first-transcript-token → first-audio per turn (kept from v4). Barge-in still kills TTS instantly; the reply always lands in chat even when you talk over it. Expected feel: a thoughtful colleague, not a kiosk.
 
-## Cleanup ledger (leftover v4 crap — delete, don't strand)
+## Cleanup ledger (leftover v4 crap — delete, don't strand) (executed 2026-07-03)
 
 The elegance bar: after the pivot, a reader should find **no trace of the dual-layer design** except this brief's Context paragraph and git history.
 

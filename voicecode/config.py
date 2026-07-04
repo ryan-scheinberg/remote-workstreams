@@ -18,8 +18,6 @@ def _env(name: str, default: str) -> str:
 class Config:
     host: str = "127.0.0.1"
     port: int = 8400
-    conversation_model: str = "claude-haiku-4-5"
-    execution_cwd: Path = field(default_factory=Path.home)
     data_dir: Path = field(default_factory=lambda: Path.home() / ".voicecode")
 
     @property
@@ -31,7 +29,5 @@ class Config:
         return cls(
             host=_env("HOST", cls.host),
             port=int(_env("PORT", str(cls.port))),
-            conversation_model=_env("CONVERSATION_MODEL", cls.conversation_model),
-            execution_cwd=Path(_env("EXECUTION_CWD", str(Path.home()))).expanduser(),
             data_dir=Path(_env("DATA_DIR", str(Path.home() / ".voicecode"))).expanduser(),
         )

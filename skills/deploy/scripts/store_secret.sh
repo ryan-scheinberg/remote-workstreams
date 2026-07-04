@@ -13,7 +13,7 @@ set -euo pipefail
 
 NAME="${1:-}"
 case "$NAME" in
-  anthropic-api-key|deepgram-api-key|cartesia-api-key) NEEDS_HASH=no ;;
+  deepgram-api-key|cartesia-api-key) NEEDS_HASH=no ;;
   pairing-token-hash|pin-hash) NEEDS_HASH=yes ;;
   *) echo "error=unknown-secret name='$NAME'"; exit 2 ;;
 esac

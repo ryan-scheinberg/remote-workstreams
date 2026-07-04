@@ -23,6 +23,14 @@ else
   echo "uv=missing"
 fi
 
+# --- tmux (hard prerequisite: every Claude Code session lives in tmux) ---
+if command -v tmux >/dev/null 2>&1; then
+  echo "tmux=$(command -v tmux)"
+  echo "tmux_version=$(tmux -V | awk '{print $2}')"
+else
+  echo "tmux=missing"
+fi
+
 # --- service repo (a git clone of voice-code, NOT the plugin marketplace copy) ---
 if [ -f "$REPO/pyproject.toml" ] && grep -q '^name = "voice-code"' "$REPO/pyproject.toml"; then
   echo "repo=$REPO"
@@ -59,7 +67,7 @@ else
 fi
 
 # --- Keychain secrets (presence only; values are never printed) ---
-for name in anthropic-api-key deepgram-api-key cartesia-api-key pairing-token-hash pin-hash; do
+for name in deepgram-api-key cartesia-api-key pairing-token-hash pin-hash; do
   if security find-generic-password -s voice-code -a "$name" >/dev/null 2>&1; then
     echo "secret_${name}=present"
   else
@@ -79,6 +87,18 @@ if curl -fsS -m 2 "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1; then
   echo "healthz=ok"
 else
   echo "healthz=unreachable"
+fi
+
+# --- tmux session "voice" (the service bootstraps it at start) ---
+if command -v tmux >/dev/null 2>&1 && tmux has-session -t voice 2>/dev/null; then
+  echo "tmux_session=voice"
+  if tmux list-windows -t voice -F '#{window_name}' 2>/dev/null | grep -qx convo; then
+    echo "convo_window=alive"
+  else
+    echo "convo_window=missing"
+  fi
+else
+  echo "tmux_session=missing"
 fi
 
 exit 0

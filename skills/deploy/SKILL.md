@@ -1,6 +1,6 @@
 ---
 name: deploy
-description: Deploy voice-code on this Mac — Tailscale check, provider keys into the macOS Keychain, pairing token/PIN, launchd install, tailscale serve, pairing QR, round-trip test. Use when the user wants to install, deploy, or repair a voice-code service.
+description: Deploy voice-code on this Mac — tmux + Tailscale checks, Deepgram/Cartesia keys into the macOS Keychain, pairing token/PIN, launchd install, tailscale serve, pairing QR, round-trip test. Use when the user wants to install, deploy, or repair a voice-code service.
 ---
 
 # Deploy voice-code
@@ -29,10 +29,14 @@ Run `scripts/check.sh [REPO_DIR]` (default checks `~/voice-code`). Read the outp
 tell the user what is already in place and which steps remain. On a healthy install
 (everything `ok`/`present`/`configured`), say so and ask what they want to change.
 
-## Step 1 — Preflight: macOS, uv, service repo
+## Step 1 — Preflight: macOS, uv, tmux, service repo
 
 - `os=unsupported` → stop; voice-code runs on macOS only (launchd, Keychain, CoreAudio).
 - `uv=missing` → have the user install uv (https://docs.astral.sh/uv/) and re-check.
+- `tmux=missing` → tmux is a hard prerequisite: every Claude Code session voice-code
+  drives lives in the `voice` tmux session. With the user's OK run `brew install tmux`
+  (no Homebrew → https://brew.sh first), then re-run `check.sh` and confirm
+  `tmux=`/`tmux_version=` report a binary.
 - `repo=missing` → the service needs a durable git clone of voice-code. Ask the user if
   they already have one (re-run `check.sh THEIR_PATH` to verify); otherwise, with their
   OK, clone the canonical remote to `~/voice-code`:
@@ -60,17 +64,17 @@ path printed by `check.sh`.
 
 ## Step 3 — Provider API keys
 
-For each of `anthropic-api-key`, `deepgram-api-key`, `cartesia-api-key` that `check.sh`
-reports `missing` (or that the user wants to rotate): ask the user to paste the key
-(consoles: console.anthropic.com, console.deepgram.com, play.cartesia.ai), then with
-their OK store it:
+For each of `deepgram-api-key` and `cartesia-api-key` that `check.sh` reports
+`missing` (or that the user wants to rotate): ask the user to paste the key
+(consoles: console.deepgram.com, play.cartesia.ai), then with their OK store it:
 
 ```
-printf '%s' 'PASTED_KEY' | scripts/store_secret.sh anthropic-api-key
+printf '%s' 'PASTED_KEY' | scripts/store_secret.sh deepgram-api-key
 ```
 
-Same command shape for the other two names. Keys go only to the login Keychain
-(service `voice-code`, matching `voicecode/keychain.py`) — never into files.
+Same command shape for the other name. Keys go only to the login Keychain (service
+`voice-code`, matching `voicecode/keychain.py`) — never into files. There is no model
+API key: all model use rides the Mac's Claude Code auth.
 
 ## Step 4 — Pairing token and PIN
 
@@ -101,8 +105,16 @@ service. With their OK:
 scripts/install_service.sh "$REPO"
 ```
 
-It waits up to 30s for `http://127.0.0.1:8400/healthz`. On `healthz=failed`, read the
-log files named in the rendered plist, fix, and re-run the script.
+It fails fast if tmux is missing, then waits up to 30s for
+`http://127.0.0.1:8400/healthz`. On `healthz=failed`, read the log files named in the
+rendered plist, fix, and re-run the script.
+
+At boot the service does the session bootstrapping itself — nothing to do here, but
+verify it took: it writes `~/.voicecode/workstream-settings.json` (per-boot approval
+hook wiring), creates the `voice` tmux session if absent, and spawns or `--resume`s
+the persistent convo Claude Code session in window `voice:convo`. A healthy `check.sh`
+therefore also shows `tmux_session=voice` and `convo_window=alive`; if either is off
+while `healthz=ok`, read the service logs — the tmux bootstrap failed.
 
 ## Step 6 — Expose over the tailnet
 
@@ -146,8 +158,9 @@ uses the live keys):
 (cd "$REPO" && uv run python -m voicecode.audio.roundtrip)
 ```
 
-Report pass/fail. Finish with a summary: service state, MagicDNS URL, pairing status,
-round-trip result, and the rollback notes below.
+Report pass/fail. Finish with a summary: service state, tmux session state
+(`tmux_session=` / `convo_window=` from a final `check.sh`), MagicDNS URL, pairing
+status, round-trip result, and the rollback notes below.
 
 ## Rollback / uninstall
 
