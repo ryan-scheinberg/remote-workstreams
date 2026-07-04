@@ -1,132 +1,98 @@
-# voice-code
+# voice-code (v5)
 
-Voice interface for Claude Code on personal infrastructure. Mac is the brain, iPhone is a thin terminal, Tailscale is the wire. Open source (GPLv3), published as `github.com/ryan-scheinberg/voice-code`.
+Voice and phone front-end over **real, interactive Claude Code sessions**. Mac is the brain, tmux is the substrate, terminals are glass, iPhone is a thin terminal, Tailscale is the wire. Open source (GPLv3), intended home `github.com/ryan-scheinberg/voice-code`.
 
 ## Context
 
-Claude Code is keyboard-bound. This project makes it ambient: hold a natural spoken conversation with your coding assistant while it does real agentic work — from anywhere, on any network, with zero cloud infrastructure beyond the model/STT/TTS APIs you already pay for.
+v4 built a dual-layer engine: a raw Haiku API loop for speed, a headless Agent-SDK Claude Code session for work, and a status-event bridge between them. It shipped and verified — and it was the wrong product. A fast shallow model optimizes for "sounds human at a drive-through"; the actual goal is the best results. Conversations with Fable at low effort beat Haiku by too much to trade away, and a headless SDK session is a second-class agent you can't sit down and drive.
 
-The core innovation is a **dual-layer conversation architecture**: a fast conversational model (Haiku) streams natural spoken responses immediately, while a deep execution agent (a headless Claude Code session) runs tools, subagents, and plans in parallel. The user never waits on backend work. The execution layer feeds findings into the conversation layer's context; the voice speaks only to what it knows and defers naturally on what it doesn't.
+v5's rule: **every model interaction is a real interactive Claude Code session.** No Agent SDK, no headless/print mode, no raw Anthropic API calls — ever. The system gains three things structurally: the phone and the laptop drive the *same* sessions (walk over, attach, keep typing); every session inherits the full harness (skills, hooks, CLAUDE.md, permission rules) natively instead of through an adapter; and no Anthropic API key exists anywhere — all model use rides Claude Code auth.
 
-All state lives on the Mac in a persistent service. The phone dropping — call, lost signal, closed app, Safari suspending — is a non-event. Reconnect and resume mid-conversation.
+## The substrate: tmux, terminal-agnostic
 
-## Audience
+All sessions live in one tmux server session (`voice`). The Python service talks **only to tmux and the filesystem**:
 
-- Primary: the author (personal daily driver).
-- Secondary: self-hosters who clone the repo and run the deploy plugin on their own Mac + tailnet.
+- **Write**: `tmux send-keys` / `load-buffer`+`paste-buffer` (multiline-safe) into a window.
+- **Read**: never scrape the TUI for content. Claude Code writes every session transcript as JSONL under `~/.claude/projects/<cwd-slug>/`; the service tails those files for replies, status, and chat rendering. `capture-pane` is reserved for the raw-terminal view and prompt-state detection fallback.
+- **Attach**: any terminal (Warp today, anything tomorrow) runs `tmux attach -t voice`. The system neither knows nor cares which glass is open. When you come back to the laptop, the sessions are just *there*, clean, yours.
+
+Session↔transcript mapping: each session gets its own working directory (convo: the voice-code data dir; workstreams: their own repo/worktree), so cwd-slug → JSONL directory is 1:1 and the newest file after spawn is the session. Pin this in a spike before building on it.
+
+## The session roster
+
+| Session | Model / effort | Lifetime | Role |
+|---|---|---|---|
+| `voice:convo` | Fable 5, **low** | persistent | The conversation. A dedicated skill (`role-convo`) makes it a voice-register interlocutor: short spoken turns, no markdown in speech, tools available but *discouraged* — answer from knowledge, don't spelunk, never do workstream-sized work inline. |
+| stint planner | Opus 4.8, **high** | ephemeral | Reads the convo transcript since the last stint → writes a summarized stint plan file → session closes. |
+| `voice:ws-<name>` | Fable 5, **xhigh** | until shipped | An execution session opened with `/role-root` + the stint plan. Appears in the UI as a **workstream** card and in tmux as a window. |
+| injector | Opus 4.8, **high** | ephemeral | Takes the latest convo delta + a target workstream → distills a clean directive → `send-keys` into that workstream → closes. |
+
+The convo session is the product's soul; `role-convo` is the highest-risk design surface (it replaced v4's coherence prompt) and gets written and hand-evaluated first, before any plumbing.
+
+## The loop (how a day works)
+
+1. Talk to `voice:convo` from anywhere — phone PWA or any attached terminal. It converses; it does not grind.
+2. **Plan stint** button → planner passthrough turns the conversation into a stint plan → you glance at it → it launches a workstream (Fable xhigh, `/role-root`).
+3. Keep talking. **Send to workstream** routes your latest thinking through the injector into the running workstream. **Check in** has the convo session read a workstream's transcript tail and tell you where things stand, out loud.
+4. Workstream permission gates surface on the phone as approve/deny cards (mechanism below) — or you just answer them in the terminal.
+5. **Compact** button sends `/compact` to the convo session whenever you want the chat squeezed.
 
 ## Scope
 
-### The MVP Slice
+### In (v5 first pass)
+- tmux substrate module: spawn/inject/tail/close, session registry, cwd-per-session mapping
+- `role-convo` skill + hand-run evaluation of its register and restraint
+- Voice pipeline (kept from v4: Deepgram STT, VAD/endpointing, sentence-chunked Cartesia TTS, barge-in) rewired to the convo session; ambient Mac mic mode
+- Server (kept skeleton: FastAPI, launchd, auth chain, SQLite) with the new WS protocol: chat stream, workstream cards, buttons
+- PWA rework: persistent chat, Plan-stint / Send-to-workstream / Check-in / Compact buttons, workstream cards with live tails, approvals
+- Planner + injector passthrough flows and their skills (`role-stint-plan`, `role-inject`)
+- Approval surfacing via a **PreToolUse hook** shipped by voice-code: installed into workstream sessions, it POSTs gated tool calls to the service and waits for the phone verdict (timeout → fall through to the normal terminal dialog). Native hooks, not scraping. Pane-scrape detection is the fallback if the hook route hits a wall.
+- Deploy plugin updated: tmux install check, no Anthropic key step, bootstrap of the `voice` tmux session
 
-A user can hold an ambient voice conversation (Mac mic + speaker, no phone yet) that flows naturally while an execution agent completes real Claude Code work in the background, and hear its findings surface in the spoken conversation.
+### Out
+- Any SDK/headless/API-loop path — **permanently**
+- Sub-second latency as a goal. Fable low takes seconds to first token; that's the trade we're choosing. Streaming TTS off the transcript tail + instrumentation stay; a "thinking" earcon is the mitigation if silence feels dead.
+- Native iOS app (PWA holds), Codex, cloud relay (permanently), multiple simultaneous *audio* attachments
 
-### In Scope
+## Latency stance
 
-- Dual-layer conversation engine (conversation agent + execution agent + status-event bridge)
-- Full audio pipeline on the Mac: streaming STT (Deepgram Nova-3), VAD/endpointing, sentence-chunked streaming TTS (Cartesia behind an adapter), barge-in
-- Persistent FastAPI service (launchd) holding all session state; sessions survive disconnects and are resumable
-- PWA phone client served by the Mac over `tailscale serve` (HTTPS on the MagicDNS name): mic capture, playback, Workspace Viewer, session switcher
-- Auth: tailnet membership + pairing token + 4-digit PIN + WebAuthn (Face ID), long-lived scoped session credential
-- Approval gates: execution-agent permission requests surface in the Workspace Viewer as approve/deny, wired to the Agent SDK permission callback
-- Deploy plugin (`/voice-code:deploy`): Tailscale check, provider key setup into macOS Keychain, token/PIN generation, launchd install, pairing QR
-- Execution-agent adapter interface with the Claude Code implementation
+Measure, don't promise. Instrument endpoint → first-transcript-token → first-audio per turn (kept from v4). Barge-in still kills TTS instantly; the reply always lands in chat even when you talk over it. Expected feel: a thoughtful colleague, not a kiosk.
 
-### Out of Scope
+## Cleanup ledger (leftover v4 crap — delete, don't strand)
 
-- **Codex implementation** — the adapter interface is designed for it; the implementation lands later. Halves v1 integration testing; Codex isn't installed on the target machine.
-- **Native iOS app** — the PWA covers v1. Native Swift (background audio, locked-screen listening) is a follow-on only if pocket-listening proves necessary. Safari suspending is architecturally identical to a dropped phone.
-- **Local Whisper STT** — fallback story, not a launch feature. Deepgram streaming is the only option that hits the latency budget.
-- **Tailscale Funnel mode** — documented as a pointer for self-hosters; no hardening work (rate limiting, lockout) in v1. Private tailnet is the supported mode.
-- **Multiple concurrent voice sessions** — server-side session model supports many stored sessions with one attached/active; simultaneous live audio sessions deferred.
-- **Cloud relay of any kind** — permanently out.
+The elegance bar: after the pivot, a reader should find **no trace of the dual-layer design** except this brief's Context paragraph and git history.
 
-## Technical Approach
+**Delete outright**
+- `voicecode/engine/` — Haiku loop, frozen prompt, dispatch parser (the sentence **chunker moves** to `voicecode/audio/`, it's TTS plumbing, not engine)
+- `voicecode/adapters/claude_code.py`, `claude_code_distill.py`, `adapters/execution.py` — the SDK adapter and its ABC
+- `voicecode/events.py` — the bridge vocabulary; UI state now derives from transcripts (a much smaller UI-message set lives in protocol.py)
+- `evals/` — Haiku coherence evals are meaningless now; `role-convo` gets its own lighter eval script
+- `protocol.py` messages that encoded the bridge (`Event`, dispatch-adjacent shapes); redesign around chat/workstream/button messages
+- Tests of all the above (large); the two integration suites get rewritten against the tmux substrate with a fake tmux
+- `pyproject.toml`: drop `anthropic` and `claude-agent-sdk` entirely
+- AGENTS.md sections describing the engine/adapter/bridge behavior
 
-### Topology
-
-```
-iPhone (Safari PWA) ──WebSocket/HTTPS over Tailscale──> Mac
-                                                         ├─ FastAPI service (launchd, persistent)
-                                                         │   ├─ Audio pipeline: Deepgram STT ⇄ VAD ⇄ Cartesia TTS
-                                                         │   ├─ Conversation agent: raw Anthropic API, Haiku, streaming
-                                                         │   ├─ Execution agent: Claude Agent SDK (headless Claude Code)
-                                                         │   ├─ Session store: SQLite
-                                                         │   └─ Static PWA + Workspace Viewer
-                                                         └─ tailscale serve (TLS on MagicDNS name)
-```
-
-### The two layers are different kinds of thing — this is load-bearing
-
-**Conversation agent** = a plain `client.messages.stream()` loop on `claude-haiku-4-5` (config-swappable to Sonnet). No tools. Short frozen system prompt with a `cache_control` breakpoint — prompt caching here is a latency requirement, not an optimization. We own the message list, which is what makes the context bridge possible.
-
-**Execution agent** = a headless Claude Code session via the Claude Agent SDK (Python), behind an adapter interface:
-
-```
-ExecutionAdapter: start(prompt) / send(message) / events() -> stream / resume(session_id) / approve(gate_id, verdict)
-```
-
-This inherits the whole harness for free (skills, hooks, MCP, subagents, `--resume`). Approval gates map onto the SDK's permission callback: a gated tool call emits a `needs_approval` event to the Workspace Viewer; the verdict flows back into the running session.
-
-**The bridge**: the execution agent's activity is distilled into typed status events — `task_started`, `progress`, `finding`, `needs_approval`, `completed`, `error` — each a short structured summary. The server injects pending events into the conversation agent's context as `<system-reminder>` blocks inside the next user turn (mid-conversation `role:"system"` messages are Opus 4.8-only; user-turn injection is the documented pattern for Haiku), placed after the cache breakpoint so the prefix cache survives.
-
-**Coherence rule**: the conversation agent's system prompt hard-constrains it to speak only to events it has received and to defer naturally on anything in flight ("still working through the auth module") — never to fabricate results. This prompt + the event schema is the highest-risk design surface; it gets prototyped and evaluated before any audio exists.
-
-**Unsolicited speech**: `completed` and `needs_approval` events trigger proactive speech when the user is silent — that's what ambient means. Client has a mute toggle; muted events queue and surface on unmute or in the Viewer.
-
-### Latency budget (user stops speaking → first audio)
-
-| Stage | Budget |
-|---|---|
-| VAD endpointing (trailing-silence decision) | 300–500ms |
-| STT finalization (Deepgram streaming) | 100–200ms |
-| Conversation agent TTFT (Haiku, cached prompt) | 300–500ms |
-| First sentence → TTS first audio (Cartesia) | 50–150ms |
-| **Target total** | **≤ 1.0s p50** |
-
-Non-negotiable techniques: prompt caching on the conversation agent; sentence-chunked streaming TTS (never wait for the full response); barge-in. Speculative LLM starts on interim transcripts are a known lever held in reserve — added only if measured p50 exceeds 1s.
-
-**Barge-in**: client requests `echoCancellation: true` on `getUserMedia`; server kills TTS synthesis and playback the moment VAD detects user speech during playback. The audio pipeline is a state machine (`listening / thinking / speaking / interrupted`) designed around this from day one.
-
-### Phone client: PWA, not an app
-
-`tailscale serve` provisions real Let's Encrypt certificates for the Mac's MagicDNS name, so Safari treats the served app as a secure context — unlocking `getUserMedia`, WebAuthn (Face ID), and WebSockets in the browser. The client is static HTML/JS served by the Mac: AudioWorklet mic capture streaming PCM over WebSocket, audio playback, the Workspace Viewer, and session controls. No Xcode, no App Store; any tailnet device with a browser is a terminal.
-
-### Auth
-
-1. **Tailnet membership** is the perimeter — non-members can't reach the Mac at all.
-2. **Pairing** (once per device): token (32+ chars, generated at deploy) + user-chosen 4-digit PIN → WebAuthn registration (Face ID) → server issues a long-lived, revocable session credential.
-3. **Reconnects** present the credential; no re-auth. Credentials listed/revocable server-side.
-4. Secrets (provider keys, token hash, PIN hash) live in the macOS Keychain via the `security` CLI; nothing secret in config files.
-
-### Stack
-
-- **Python 3.12/3.13 via uv** (3.14 is too new for parts of the audio ecosystem), FastAPI, uvicorn
-- Anthropic Python SDK (conversation layer), Claude Agent SDK (execution layer)
-- Deepgram Python SDK (streaming STT + endpointing), Cartesia Python SDK behind a `TTSAdapter` (ElevenLabs adapter later)
-- SQLite for session/transcript/credential persistence
-- Vanilla JS/TS PWA (no framework needed for a thin client), AudioWorklet
-- launchd for service persistence; `tailscale serve` for TLS + routing
-- Conversation model: `claude-haiku-4-5` default. Execution model: whatever the user's Claude Code is configured with (Opus 4.8 default) — voice-code doesn't override it.
+**Keep (rewire)**
+- `voicecode/audio/` pipeline, state machine, latency logging; `adapters/deepgram_stt.py`, `cartesia_tts.py`
+- `voicecode/server/` auth (token+PIN+WebAuthn+credentials, scrypt contract), store (schema changes: sessions map to CC session ids + tmux windows; drop the duplicate transcript log — CC JSONL is the source of truth), static serving, launchd template
+- PWA audio internals (worklet capture, gapless playback, pairing flow); the screens above it are rebuilt
+- `skills/deploy/` + plugin scaffolding (edited, not rebuilt)
 
 ## Testing & Observability
 
-- **Bridge evals before audio**: scripted text conversations against the dual-layer engine asserting the coherence rule (no fabricated results, natural deferral, findings surfaced within N turns). This is the project's most important test suite.
-- **Latency instrumentation from day one**: per-turn structured log of endpoint→transcript→TTFT→first-audio timestamps; the ≤1s p50 criterion is measured, not vibes.
-- Unit tests: event schema, session store, auth flows (token/PIN/credential), TTS adapter contract.
-- Integration: audio round-trip test (synthesized speech in → transcript → reply audio out) runnable headlessly on the Mac; used by the deploy plugin as its final connection test.
-- Soak test for milestone 2: 30-minute PWA session on LTE — mic stability, reconnect behavior, credential persistence.
-- Structured JSON logs from the service; `/healthz` endpoint; launchd keeps-alive.
+- Substrate spike is milestone 0: prove inject (multiline, bracketed paste), transcript tail, session mapping, and the hook-based approval round-trip with throwaway scripts **before** the build.
+- Unit tests mock at the tmux boundary (a `FakeTmux`) and use fixture JSONL transcripts; no test launches a real Claude Code session.
+- One gated integration test that does drive a real `voice:convo` session end-to-end (text in → transcript out), run manually.
+- Latency instrumentation and structured JSON logs carried over; `/healthz` unchanged.
 
-## Deployment & Rollout
+## Deployment
 
-Single environment: the user's Mac. Deployment is the `/voice-code:deploy` Claude Code plugin — OS + Tailscale checks (guides install/login if missing), provider key prompts → Keychain, token/PIN setup, launchd install, `tailscale serve` config, pairing QR, audio round-trip test. Rollback = launchd unload + previous git tag. Public repo from the start; "launch" is just README + a post when it's a proven daily driver.
+`/voice-code:deploy` as before, minus the Anthropic key, plus: `tmux` presence (brew install), `voice` session bootstrap at service start (launchd service supervises the tmux session's existence, not the terminals). Rollback unchanged.
 
 ## Risks & Open Questions
 
-- **Haiku coherence under the deferral prompt** — can it consistently avoid fabricating and defer gracefully? *Closed by the milestone-0 bridge evals; fallback is Sonnet on the conversation layer (config flip).*
-- **VAD endpointing vs. thinking-out-loud speech** — ambient talk has long mid-thought pauses; too-eager endpointing interrupts, too-lazy feels sluggish. *Closed by tuning Deepgram endpointing against real usage; may need a "hold-to-think" affordance.*
-- **Safari mic/AudioWorklet stability over long sessions and reconnects** — *closed by the milestone-2 soak test; native app is the escape hatch.*
-- **Echo cancellation quality on iPhone speaker at conversational volume** — barge-in may false-trigger on the assistant's own voice. *Closed by real-device testing; mitigations: TTS-playback-aware VAD gating, headphone recommendation.*
-- **Agent SDK permission-callback ergonomics for approval gates** — assumed to map cleanly; *closed by a spike in the execution-adapter work.*
-- **Cartesia account** — doesn't exist yet; needed before TTS work starts. *Action: Ryan creates account + API key.*
+- **Transcript JSONL is an undocumented internal format** — pin the parsing behind one module with defensive tests; expect breakage on Claude Code updates; the deploy skill should smoke-test it post-update.
+- **TUI injection quirks** (input box state, paste bracketing, a session mid-permission-dialog swallowing input) — milestone-0 spike; queueing behavior of Claude Code's input box is the friend here.
+- **Hook-based approvals** assume a PreToolUse hook can defer to an external verdict with acceptable UX; if not, fall back to pane-state detection or laptop-only approvals for v1.
+- **role-convo restraint** — can Fable low reliably *not* burn minutes on tools mid-conversation? Skill design + hand evals; worst case the skill hard-forbids tools and check-ins become a button-only flow.
+- **/compact and transcript continuity** — verify the JSONL tail survives compaction sanely.
