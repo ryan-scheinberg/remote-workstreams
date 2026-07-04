@@ -16,7 +16,7 @@ All sessions live in one tmux server session (`voice`). The Python service talks
 - **Read**: never scrape the TUI for content. Claude Code writes every session transcript as JSONL under `~/.claude/projects/<cwd-slug>/`; the service tails those files for replies, status, and chat rendering. `capture-pane` exists only for the raw-terminal view.
 - **Attach**: any terminal (Warp today, anything tomorrow) runs `tmux attach -t voice`. The system neither knows nor cares which glass is open. When you come back to the laptop, the sessions are just *there*, clean, yours.
 
-Session↔transcript mapping: every session starts at `~` — workstreams included; `/role-root` spawns its subagents into the right repos itself — so all transcripts land in one `~/.claude/projects/<home-slug>/` directory. The service identifies a session's JSONL as the file that appears after its spawn; the milestone-0 spike pins this.
+Session↔transcript mapping: every session starts at `~` — workstreams included; `/role-root` spawns its subagents into the right repos itself — so all transcripts land in one `~/.claude/projects/<home-slug>/` directory. The service **mints each session's UUID** and passes `--session-id`, so the transcript path is known before the session starts. No directory diffing, no races.
 
 ## The session roster
 
@@ -81,7 +81,14 @@ The elegance bar: after the pivot, a reader should find **no trace of the dual-l
 ## Testing & Observability
 
 - **Build optimistically**: one primary path per problem, no fallback code until testing — agent-run or Ryan's UAT — proves the primary path broken. Fallbacks that exist "just in case" are the leftover crap this brief exists to prevent.
-- Substrate spike is milestone 0: prove inject (multiline, bracketed paste), transcript tail, session mapping, and the hook-based approval round-trip with throwaway scripts **before** the build.
+- Milestone 0 (substrate spike) **ran 2026-07-03 and passed on every item**. Load-bearing findings the build rests on:
+  - `--session-id <minted-uuid>` makes the transcript path deterministic; `--model fable --effort low`, `-n <name>`, `--settings <file>` (per-session hook wiring), `--plugin-dir` (per-session skill loading) all work at spawn. Nothing ever edits user config.
+  - Multiline inject: `tmux load-buffer` + `paste-buffer -p`, brief pause, then `send-keys Enter` — a 3-line message with `$HOME`, backticks, and quotes landed verbatim as one user message.
+  - Transcript JSONL: one line per content block (`user` content is a string; `assistant` content is a block list — text/thinking/tool_use; tool results come back as `user` lines). Meta line types to skip: ai-title, agent-name, last-prompt, custom-title, mode, permission-mode, attachment, file-history-snapshot, system. Text blocks appear only when complete — no streaming partials, so TTS granularity is per finished block.
+  - `/compact` appends to the **same** file; tailing and conversation continue unbroken.
+  - Hook approvals round-trip over HTTP: allow (blocked 6s on the fake phone, then ran), deny (tool blocked, reason lands in the `is_error` tool_result), and relay-unreachable → hook prints nothing → native behavior — all proven **under bypassPermissions**, which is how Ryan actually runs (hooks gate, dialogs don't).
+  - Input pasted mid-turn queues and processes after — busy sessions accept injection.
+  - Gotcha: Ryan's zsh defines `claude()` which turns a bare `claude` into `claude /role-root`; the substrate must always spawn `command claude` with explicit args.
 - Unit tests mock at the tmux boundary (a `FakeTmux`) and use fixture JSONL transcripts; no test launches a real Claude Code session.
 - One gated integration test that does drive a real `voice:convo` session end-to-end (text in → transcript out), run manually.
 - Latency instrumentation and structured JSON logs carried over; `/healthz` unchanged.
@@ -92,8 +99,6 @@ The elegance bar: after the pivot, a reader should find **no trace of the dual-l
 
 ## Risks & Open Questions
 
-- **Transcript JSONL is an undocumented internal format** — pin the parsing behind one module with defensive tests; expect breakage on Claude Code updates; the deploy skill should smoke-test it post-update.
-- **TUI injection quirks** (input box state, paste bracketing, a session mid-permission-dialog swallowing input) — milestone-0 spike; queueing behavior of Claude Code's input box is the friend here.
-- **Hook-based approvals** assume a hook can block on an external verdict with acceptable UX — proven or killed in the milestone-0 spike; nothing else gets built ahead of that answer.
+- **Transcript JSONL is an undocumented internal format** — the spike pinned today's shape (2.1.201), but pin the parsing behind one module with defensive tests; expect breakage on Claude Code updates; the deploy skill should smoke-test it post-update.
 - **role-convo efficiency** — the skill orients, it doesn't ban: use tools when they're the quick path, stay conversational otherwise, with success criteria stated plainly (small skill, like the other roles). Hand evals confirm register and pace before plumbing.
-- **/compact and transcript continuity** — verify the JSONL tail survives compaction sanely.
+- **First-audio latency is reply-completion-bound** — text blocks land whole, so speech starts after Fable finishes a block. Short spoken turns (role-convo's job) keep this small; measure per turn before mitigating.
