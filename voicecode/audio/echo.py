@@ -61,5 +61,11 @@ class EchoGuard:
         playback_end = self._first_audio + self._audio_bytes / self._bytes_per_second
         if self._now() > playback_end + _MARGIN_S:
             return False
-        norm = _norm(text)
-        return bool(norm) and norm in self._spoken
+        words = _norm(text).split()
+        if not words:
+            return False
+        # STT mishears its own speaker ("brian" for "ryan"), so exact-sequence
+        # matching whiffs; majority word overlap is the workable signal.
+        spoken = set(self._spoken.split())
+        hits = sum(1 for w in words if w in spoken)
+        return hits / len(words) >= 0.6

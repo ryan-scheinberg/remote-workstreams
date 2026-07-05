@@ -220,8 +220,9 @@ function handleMessage(msg) {
       break;
     }
     case "state":
-      // Barge-in kill: anything queued is stale the instant the server leaves "speaking".
-      if (msg.state === "interrupted" || msg.state === "listening") app.playback.flush();
+      // Barge-in kill only. "listening" means the server finished SENDING —
+      // the buffer here may still hold seconds of unplayed speech; let it play.
+      if (msg.state === "interrupted") app.playback.flush();
       ui.setState(msg.state);
       break;
     case "chat":

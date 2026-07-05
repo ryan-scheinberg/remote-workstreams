@@ -21,14 +21,16 @@ def guard(start: float = 1000.0) -> tuple[EchoGuard, SimpleNamespace]:
     return EchoGuard(now=lambda: clock.t), clock
 
 
-def test_echo_matches_normalized_substrings() -> None:
+def test_echo_matches_on_majority_word_overlap() -> None:
     g, _ = guard()
     g.start_utterance()
-    g.note_sentence("The build is green, and deploys are live.")
+    g.note_sentence("Hey Ryan, I'm here. The build is green and deploys are live.")
     g.note_audio(ONE_SECOND)
     assert g.is_echo("The build is green")
     assert g.is_echo("build is GREEN and deploys")
+    assert g.is_echo("hey brian I'm here")  # STT mishears its own speaker
     assert not g.is_echo("wait stop that")
+    assert not g.is_echo("no cancel everything please")
     assert not g.is_echo("")
     assert not g.is_echo("   ")
 
@@ -106,6 +108,21 @@ async def test_post_stream_echo_does_not_become_a_turn() -> None:
     stt.push(chunk("deploys are live", is_final=True, speech_final=True))
     await asyncio.sleep(0.1)
     assert convo.turns == ["go"]  # echo never committed as user speech
+
+    await pipeline.close()
+    await asyncio.wait_for(task, 2)
+
+
+async def test_mute_mid_utterance_commits_the_pending_turn() -> None:
+    pipeline, stt, tts, convo, sink = build()
+    task = asyncio.create_task(pipeline.run())
+
+    # Finalized words but no endpoint: the user muted before Deepgram's silence window.
+    stt.push(chunk("did it really work", is_final=True))
+    await wait_for(lambda: any(t == ("user", "did it really work", False) for t in sink.transcripts))
+
+    pipeline.set_muted(True)
+    await wait_for(lambda: convo.turns == ["did it really work"])
 
     await pipeline.close()
     await asyncio.wait_for(task, 2)

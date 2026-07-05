@@ -109,6 +109,7 @@ class AudioPipeline:
         self._mic: asyncio.Queue[bytes | None] = asyncio.Queue()
         self._finals: list[str] = []  # finalized spans of the in-progress user utterance
         self._turn_task: asyncio.Task[None] | None = None
+        self._mute_flush_task: asyncio.Task[None] | None = None
         self._closed = False
 
     @property
@@ -140,6 +141,11 @@ class AudioPipeline:
 
     def set_muted(self, muted: bool) -> None:
         self.muted = muted
+        if muted and self._finals and not self._closed:
+            # Muting mid-utterance is an endpoint: once mic frames stop, the
+            # trailing silence Deepgram needs to endpoint will never arrive.
+            chunk = TranscriptChunk(text="", is_final=True, speech_final=True)
+            self._mute_flush_task = asyncio.create_task(self._endpoint(chunk))
 
     async def close(self) -> None:
         if self._closed:
