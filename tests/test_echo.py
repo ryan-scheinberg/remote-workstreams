@@ -39,6 +39,19 @@ def test_echo_matches_verbatim_run_not_topical_overlap() -> None:
     assert not g.is_echo("   ")
 
 
+def test_short_reply_echoes_only_as_its_exact_whole() -> None:
+    g, _ = guard()
+    g.start_utterance()
+    g.note_sentence("Sounds good.")
+    g.note_audio(ONE_SECOND)
+    assert g.is_echo("sounds good")  # the phone playing us back
+    # A real reply that adds or changes anything passes.
+    assert not g.is_echo("sounds good let's move on")
+    assert not g.is_echo("sounds bad")
+    assert not g.is_echo("wait stop")
+    assert not g.is_echo("good")  # partial capture stays speech, not echo
+
+
 def test_no_audio_sent_means_no_echo() -> None:
     g, _ = guard()
     g.start_utterance()

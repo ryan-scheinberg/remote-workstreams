@@ -18,7 +18,7 @@ from deepgram import AsyncDeepgramClient
 from voicecode.adapters.stt import STTAdapter, TranscriptChunk
 from voicecode.protocol import MIC_FORMAT
 
-ENDPOINTING_MS = 700  # trailing silence before "done" — room for a thinking pause mid-sentence
+ENDPOINTING_MS = 1000  # trailing silence before "done" — room to think mid-utterance
 UTTERANCE_END_MS = 1500  # word-gap backstop; keep above ENDPOINTING_MS
 KEEPALIVE_INTERVAL = 5.0  # Deepgram drops sockets idle ~10s (e.g. while muted)
 

@@ -11,9 +11,10 @@ run of the reply word-for-word, while a human reply reuses the topic's words but
 never quotes five of them in a row in order. So echo = some 5-word run of the
 transcript appears verbatim in what we just said. Anything shorter than that run
 always passes — barge-ins ("wait, stop that") and on-topic replies are never
-eaten. Erring this way is deliberate: a rare leaked echo self-interrupts one
-turn (recoverable — the reply still lands in chat), but eating real speech
-breaks the conversation.
+eaten. One exception: a reply too short to hold such a run ("Sounds good.")
+echoes as its exact verbatim whole, so that alone matches. Erring toward passing
+is deliberate: a rare leaked echo self-interrupts one turn (recoverable — the
+reply still lands in chat), but eating real speech breaks the conversation.
 """
 
 from __future__ import annotations
@@ -69,8 +70,13 @@ class EchoGuard:
         if self._now() > playback_end + _MARGIN_S:
             return False
         words = _norm(text).split()
+        spoken = self._spoken.split()
+        if len(spoken) < _RUN:
+            # A reply too short to hold a 5-word run ("Sounds good.") still echoes;
+            # only its exact verbatim whole counts, so a real reply that adds
+            # anything at all passes.
+            return words == spoken
         if len(words) < _RUN:  # short utterances (incl. barge-ins) always pass
             return False
-        spoken = self._spoken.split()
         grams = {tuple(spoken[j : j + _RUN]) for j in range(len(spoken) - _RUN + 1)}
         return any(tuple(words[i : i + _RUN]) in grams for i in range(len(words) - _RUN + 1))
