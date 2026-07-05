@@ -34,6 +34,7 @@ from typing import Literal, Protocol
 
 from voicecode.adapters.stt import STTAdapter, TranscriptChunk
 from voicecode.adapters.tts import TTSAdapter
+from voicecode.audio.echo import EchoGuard
 from voicecode.audio.state import PipelineState, StateMachine
 
 logger = logging.getLogger(__name__)
@@ -103,6 +104,7 @@ class AudioPipeline:
         self.convo = convo
         self.sink = sink
         self.muted = False
+        self._echo = EchoGuard()
         self._sm = StateMachine()
         self._mic: asyncio.Queue[bytes | None] = asyncio.Queue()
         self._finals: list[str] = []  # finalized spans of the in-progress user utterance
@@ -161,6 +163,8 @@ class AudioPipeline:
 
     async def _handle_chunk(self, chunk: TranscriptChunk) -> None:
         text = chunk.text.strip()
+        if text and self._echo.is_echo(text):
+            text = ""  # the phone replaying our own TTS, not the user
         if text and self._sm.state is PipelineState.SPEAKING:
             await self._barge_in()
         if text:
@@ -203,6 +207,7 @@ class AudioPipeline:
 
     async def _speak_turn(self, chunks: AsyncIterator[str], timings: TurnTimings) -> None:
         tts_stream: AsyncIterator[bytes] | None = None
+        self._echo.start_utterance()
         try:
             async for sentence in chunks:
                 if timings.first_sentence_ts is None:
@@ -210,11 +215,13 @@ class AudioPipeline:
                 sentence = sentence.strip()
                 if not sentence:
                     continue
+                self._echo.note_sentence(sentence)
                 tts_stream = self.tts.synthesize(sentence)
                 async for pcm in tts_stream:
                     if timings.first_audio_ts is None:
                         timings.first_audio_ts = time.time()
                         await self._set_state(PipelineState.SPEAKING)
+                    self._echo.note_audio(len(pcm))
                     await self.sink.audio(pcm)
                 tts_stream = None
             if timings.first_audio_ts is not None:
@@ -243,3 +250,4 @@ class AudioPipeline:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
         await self.tts.cancel()
+        self._echo.cut_off()  # client flushes its buffer too; unplayed audio can't echo

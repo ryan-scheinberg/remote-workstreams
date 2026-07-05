@@ -12,7 +12,7 @@ from pathlib import Path
 from voicecode.server.store import Store
 from voicecode.substrate import CCSession, SessionSpec, Substrate
 
-CONVO_MODEL = "fable"
+CONVO_MODEL = "sonnet"  # token thrift for now; design intent is fable low (brief roster)
 CONVO_EFFORT = "low"
 CONVO_WINDOW = "convo"
 
