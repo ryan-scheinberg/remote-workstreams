@@ -1,14 +1,14 @@
 # voice-code — agent orientation
 
-Voice and phone front-end over **real, interactive Claude Code sessions**: every model interaction is a CC session living as a window in the `voice` tmux session on the Mac; the iPhone is a thin PWA over Tailscale; any terminal can `tmux attach` and drive the same sessions. `PROJECT_BRIEF.md` (v5) is the canonical design — read it before any work here.
+Voice and phone front-end over **real, interactive Claude Code sessions**: every model interaction is a CC session living as a window in the `voice` tmux session on the Mac; the iPhone is a thin PWA over Tailscale; any terminal can `tmux attach` and drive the same sessions. The README carries the design; this file carries what the next agent working on the code needs.
 
 ## State
 
-- v5 built 2026-07-03, replacing the v4 pass the same week (context in the brief). All tests green, ruff clean, cleanup ledger executed.
-- **DEPLOYED 2026-07-05 on this Mac**: launchd service live, `tailscale serve` on `ryans-macbook-air.tail4d015d.ts.net` (tailnet-only), Ryan's iPhone paired and device-tested (real voice turns, live Deepgram+Cartesia, roundtrip passed). First device testing produced two fixes now in main: media-element TTS sink (iOS ringer switch muted Web Audio) and the server-side EchoGuard (iOS echoCancellation let the agent hear itself).
-- Convo runs **sonnet/low for now** (token thrift — `CONVO_MODEL` in bootstrap.py); design intent stays fable low per the brief roster.
+- v5 built 2026-07-03, replacing the v4 pass the same week. All tests green, ruff clean.
+- **Device-tested 2026-07-05** end to end: launchd service, `tailscale serve` (tailnet-only), a paired iPhone, real voice turns over live Deepgram+Cartesia, roundtrip passed. First device testing produced two fixes now in main: media-element TTS sink (iOS ringer switch muted Web Audio) and the server-side EchoGuard (iOS echoCancellation let the agent hear itself).
+- Convo runs **sonnet/low for now** (token thrift — `CONVO_MODEL` in bootstrap.py); design intent is fable low per the session roster.
 - The gated real-session test (`tests/test_live_convo.py`, skipped unless `VOICECODE_LIVE=1`) was run once on 2026-07-03 and **passed** (haiku in tmux session `voice-qa`).
-- GitHub remote not created; intended home `github.com/ryan-scheinberg/voice-code`, GPLv3. Everything stays local until Ryan says otherwise.
+- Home: `github.com/ryan-scheinberg/voice-code`, GPLv3.
 
 ## Commands
 
@@ -44,7 +44,7 @@ plugins/claude-code/             plugin wrapper: commands/deploy.md + skills sym
 tests/                           pytest; mirror module names; server_fakes.py = reusable DI fakes
 ```
 
-"LOAD-BEARING" = frozen contract; don't change without checking every consumer (and Ryan for protocol-visible shapes). `hash_secret` in `server/auth.py` is shared with the deploy scripts; a golden-vector test breaks if the scrypt parameters move.
+"LOAD-BEARING" = frozen contract; don't change without checking every consumer (and the maintainer for protocol-visible shapes). `hash_secret` in `server/auth.py` is shared with the deploy scripts; a golden-vector test breaks if the scrypt parameters move.
 
 ## Conventions
 
@@ -52,7 +52,7 @@ tests/                           pytest; mirror module names; server_fakes.py = 
 - Composition roots (`voicecode/server/__main__.py`, `voicecode/ambient.py`) are the only modules that import concrete Tmux/adapters; everything else takes dependencies as constructor args so tests inject fakes.
 - Secrets only via `keychain.get_secret("deepgram-api-key" | "cartesia-api-key")` — env vars (`DEEPGRAM_API_KEY`, …) win, which is also how tests inject fakes. The pairing PIN is stored as a scrypt hash: `pin-hash` (a stale `pairing-token-hash` entry may linger in the Keychain from the pre-passkey design — nothing reads it; leave it). No model API key exists anywhere.
 
-## Decisions you don't get to reopen without Ryan
+## Decisions you don't get to reopen without the maintainer
 
 - **Every model interaction is a real interactive Claude Code session** — no Agent SDK, no headless/print mode, no raw model API calls. EVER.
 - Session roster: convo = Fable 5 low (persistent); stint planner and injector = Opus 4.8 high (ephemeral); workstreams = Fable 5 xhigh (until shipped).
@@ -68,7 +68,7 @@ tests/                           pytest; mirror module names; server_fakes.py = 
 
 **Chat sourcing rule** — the CC transcript is the source of truth: assistant text, tool activity, and final user text all render from transcript entries via the fan-out. The audio pipeline's sink carries ONLY user STT interims (`final=False`), state, TTS audio, and speech_end. Typed `text_input` is not locally echoed — it comes back as a transcript user line.
 
-**Approvals** — workstream sessions get a per-boot PreToolUse hook (settings file written by `__main__.py` at boot with a fresh relay token): `hooks/ask_phone.py --gate-bash` relays only Bash commands matching its short destructive list; everything else exits silently and instantly. Relay path: hook JSON on stdin → POST `/approvals` (X-Voicecode-Token) → `ApprovalRequest` card on the phone → WS `Approval` message resolves it → hook prints an allow/deny permission decision. Timeout (60s server / 90s client), non-200, or unreachable service → the hook prints nothing and Claude Code's native permission behavior takes over — that's built-in hook semantics, not our fallback code. Any user hook (Ryan's bash gate) can exec the same client.
+**Approvals** — workstream sessions get a per-boot PreToolUse hook (settings file written by `__main__.py` at boot with a fresh relay token): `hooks/ask_phone.py --gate-bash` relays only Bash commands matching its short destructive list; everything else exits silently and instantly. Relay path: hook JSON on stdin → POST `/approvals` (X-Voicecode-Token) → `ApprovalRequest` card on the phone → WS `Approval` message resolves it → hook prints an allow/deny permission decision. Timeout (60s server / 90s client), non-200, or unreachable service → the hook prints nothing and Claude Code's native permission behavior takes over — that's built-in hook semantics, not our fallback code. Any user hook (e.g. a personal bash gate) can exec the same client.
 
 **Workstreams** — `new_workstream` (one message; the phone button is arm→confirm): marker ← convo transcript line count, spawn planner with `/voice-code:role-stint-plan convo=… since_line=… output=…`, poll for the output file (2s interval, 300s budget), kill the planner, then launch IMMEDIATELY — the plan is trusted, never shown for review. Plan file's first line is `Stint: <title>` (hard contract with role-stint-plan; the title is all the user ever sees) → window `ws-<slug>`, spawned with `/role-root` + the workstream settings file, full plan text pasted only after `_await_ready` sees the role greeting in the transcript. `send_to_workstream`: injector distills convo-since-marker into a directive file, directive pasted into the workstream, marker advances. `check_in`: a directive through `pipeline.text()` so the convo session itself reads the workstream transcript tail and answers out loud. `end_workstream`: kills the window and drops the row/card; the CC transcript survives. Cards are name/title/status only (the phone renders a one-card swipe pager) and push every 5s while any workstream exists. `clear_convo`: `bootstrap.fresh_convo` kills the convo window and spawns a brand-new session (`/voice-code:role-convo`, new id, marker → 0), `bridge.reset()` swaps the transcript tail, the manager's `convo_transcript` is re-pointed, and `ConvoCleared` wipes the phone's chat.
 
@@ -80,12 +80,12 @@ tests/                           pytest; mirror module names; server_fakes.py = 
 
 ## Gotchas already known
 
-- Ryan's zsh defines a `claude()` function that rewrites a bare `claude` invocation — the substrate must always spawn `command claude` with explicit args (it does; keep it that way).
+- A user's shell may define a `claude()` function or alias that rewrites a bare `claude` invocation — the substrate must always spawn `command claude` with explicit args (it does; keep it that way).
 - Transcript JSONL is an undocumented internal format, pinned at CC 2.1.201 in `transcript.py` (one line per content block; meta/sidechain lines skipped; tool results come back as `user` lines). Expect breakage on Claude Code updates — smoke-test parsing after any CC update.
 - Text blocks appear in the transcript only when complete — no streaming partials, so first audio waits on the first finished block. role-convo's short spoken turns keep this small; measure before mitigating.
 - The default tests never talk to tmux or Claude Code; only `VOICECODE_LIVE=1 uv run pytest tests/test_live_convo.py` (never run automatically) proves the live path.
 - Deepgram v7: `client.listen.v1.connect` is the nova-3 socket; `/v2` is Flux-only (no interim_results/endpointing); `utterance_end_ms` minimum is 1000; idle sockets drop ~10s → keepalive every 5s (e.g. while muted).
-- Cartesia 3.3.0: SSE chunk events need the `.audio` property (base64-decoded); `AsyncCartesia` does NOT read the key from env — pass it explicitly; `DEFAULT_VOICE_ID` is Skylar (Ryan's pick, 2026-07-05).
+- Cartesia 3.3.0: SSE chunk events need the `.audio` property (base64-decoded); `AsyncCartesia` does NOT read the key from env — pass it explicitly; `DEFAULT_VOICE_ID` is Cartesia's stock "Skylar"; override via the `voice_id` constructor arg.
 - `qrcode.make()` returns an image with no `print_ascii`; build a `qrcode.QRCode()` object instead (the deploy skill's pairing step depends on this).
 - `audioop` is gone in Python 3.13 — `roundtrip.py` resamples with pure-python linear interpolation.
 - The PWA has no build hashes, so the server stamps `Cache-Control: no-cache` on every response (middleware in `server/app.py`). Without it iOS serves a stale `app.js` straight through deploys — a client-side fix that "didn't work" on the phone is probably this. After a deploy, swipe-kill and reopen the PWA.

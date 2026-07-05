@@ -6,7 +6,7 @@ import pytest
 
 from voicecode.substrate import SessionSpec, Substrate, Tmux, slug
 
-HOME = Path("/Users/ryanscheinberg")
+HOME = Path("/Users/alice")
 
 CONVO = SessionSpec(name="convo", model="fable", effort="low", display_name="convo")
 
@@ -56,12 +56,12 @@ class RecordingTmux(Tmux):
 
 
 def test_slug():
-    assert slug("/Users/ryanscheinberg") == "-Users-ryanscheinberg"
+    assert slug("/Users/alice") == "-Users-alice"
 
 
 def test_transcript_dir():
     sub = Substrate(FakeTmux(), home=HOME)
-    expected = Path("/Users/ryanscheinberg/.claude/projects/-Users-ryanscheinberg")
+    expected = Path("/Users/alice/.claude/projects/-Users-alice")
     assert sub.transcript_dir == expected
 
 
@@ -74,7 +74,7 @@ async def test_spawn_full_options():
         effort="xhigh",
         display_name="Wire the auth flow",
         settings_file=Path("/tmp/ws-settings.json"),
-        plugin_dir=Path("/Users/ryanscheinberg/plugins/voice-code"),
+        plugin_dir=Path("/Users/alice/plugins/voice-code"),
         initial_prompt="/voice-code:role-root plan in stint-3.md",
         remote_control=True,
     )
@@ -89,7 +89,7 @@ async def test_spawn_full_options():
         f"command claude --session-id {session.session_id} --model fable --effort xhigh"
         " -n 'Wire the auth flow' --remote-control 'Wire the auth flow'"
         " --settings /tmp/ws-settings.json"
-        " --plugin-dir /Users/ryanscheinberg/plugins/voice-code"
+        " --plugin-dir /Users/alice/plugins/voice-code"
         " '/voice-code:role-root plan in stint-3.md'"
     )
     assert fake.calls == [

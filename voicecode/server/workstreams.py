@@ -22,7 +22,7 @@ from voicecode.transcript import AssistantText, TranscriptTail
 
 logger = logging.getLogger("voicecode.server.workstreams")
 
-# Session roster (PROJECT_BRIEF): ephemeral passthroughs think hard, workstreams execute.
+# Session roster: ephemeral passthroughs think hard, workstreams execute.
 PLANNER_MODEL, PLANNER_EFFORT = "opus", "high"
 INJECTOR_MODEL, INJECTOR_EFFORT = "opus", "high"
 WORKSTREAM_MODEL, WORKSTREAM_EFFORT = "fable", "xhigh"

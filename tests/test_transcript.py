@@ -78,7 +78,7 @@ def test_file_tool_label_uses_basename():
                 {
                     "type": "tool_use",
                     "name": "Read",
-                    "input": {"file_path": "/Users/ryanscheinberg/x/voicecode/audio/pipeline.py"},
+                    "input": {"file_path": "/Users/alice/x/voicecode/audio/pipeline.py"},
                 }
             ]
         },

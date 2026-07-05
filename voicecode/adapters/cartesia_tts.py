@@ -15,7 +15,7 @@ from cartesia import AsyncCartesia
 
 from voicecode.adapters.tts import TTSAdapter
 
-# Cartesia's "Skylar" — Ryan's pick.
+# Cartesia's stock "Skylar" voice; override via the voice_id constructor arg.
 DEFAULT_VOICE_ID = "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4"
 DEFAULT_MODEL_ID = "sonic-3"
 

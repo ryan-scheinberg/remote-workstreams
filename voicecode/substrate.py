@@ -16,7 +16,7 @@ from pathlib import Path
 
 
 def slug(path: Path | str) -> str:
-    """Claude Code's project-dir slug: /Users/ryanscheinberg -> -Users-ryanscheinberg."""
+    """Claude Code's project-dir slug: /Users/alice -> -Users-alice."""
     return re.sub(r"[^A-Za-z0-9]", "-", str(path))
 
 
