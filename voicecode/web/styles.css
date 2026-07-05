@@ -461,6 +461,7 @@ button {
   border-color: color-mix(in srgb, var(--amber) 40%, transparent);
 }
 #btn-plan.pending .spin { display: inline-block; }
+#btn-plan.pending .label { display: none; } /* the spinner alone fits the button */
 
 #btn-plan.armed {
   color: var(--blue);
