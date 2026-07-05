@@ -7,8 +7,6 @@ export class MicCapture {
     this.ctx = ctx;
     this.targetRate = 16000;
     this.onchunk = null; // (arrayBuffer, level) => void
-    this.onmute = null; // iOS took the mic: phone lock, Siri, a phone call
-    this.onunmute = null;
     this.stream = null;
     this.node = null;
     this.source = null;
@@ -20,9 +18,6 @@ export class MicCapture {
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true },
     });
-    const track = this.stream.getAudioTracks()[0];
-    track.onmute = () => this.onmute?.();
-    track.onunmute = () => this.onunmute?.();
     await this.ctx.audioWorklet.addModule("audio-worklet.js");
     this.node = new AudioWorkletNode(this.ctx, "mic-capture", {
       processorOptions: { targetRate: this.targetRate },
@@ -82,16 +77,13 @@ export class Playback {
     document.body.appendChild(this.el);
     // iOS pauses live-stream elements on audio-session interruptions (mic
     // category switches, route changes); resume instantly or speech dies mid-word.
-    // Only while the context renders, though: a paused context feeds the element
-    // no frames and WebKit screeches the last one forever, so when iOS interrupts
-    // the context (app switch, phone lock) the element must pause with it.
+    // Foreground only: force-playing while backgrounded fights the OS over a
+    // frozen stream and WebKit screeches its last frame. Timing is load-bearing —
+    // the server's echo guard assumes playback tracks its send clock, so nothing
+    // may stall the element while the app is visible.
     this.unlocked = false;
     this.el.addEventListener("pause", () => {
-      if (this.unlocked && this.ctx.state === "running") this.el.play().catch(() => {});
-    });
-    this.ctx.addEventListener("statechange", () => {
-      if (this.ctx.state !== "running") this.el.pause();
-      else if (this.unlocked && this.el.paused) this.el.play().catch(() => {});
+      if (this.unlocked && document.visibilityState === "visible") this.el.play().catch(() => {});
     });
     this.nextTime = 0;
     this.active = new Set();
@@ -120,7 +112,7 @@ export class Playback {
         return;
       }
       if (this.ctx.state === "suspended") this.ctx.resume().catch(() => {});
-      if (this.unlocked && this.el.paused && this.ctx.state === "running") this.el.play().catch(() => {});
+      if (this.unlocked && this.el.paused && document.visibilityState === "visible") this.el.play().catch(() => {});
     }, 300);
   }
 

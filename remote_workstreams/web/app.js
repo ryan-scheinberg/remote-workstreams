@@ -10,13 +10,8 @@ import { MicCapture, Playback } from "./audio.js";
 import { loginDevice, PairError, pairDevice } from "./pairing.js";
 import * as ui from "./ui.js";
 
-// The web can't see the lock button, but it leaves two tells. Locking freezes
-// the page — mic chunks and the heartbeat stop ticking, so a stale lastTick on
-// return means the phone was locked (or iOS reaped the tab), not app-switched.
-// And locking mutes the mic track, which an app switch that keeps capture alive
-// never does. Either tell puts the session back behind Face ID; an app switch
-// where the mic keeps flowing stays live indefinitely so the chat can continue.
-const FROZEN_LOCK_MS = 15000;
+// The web can't distinguish phone-lock from an app switch; time hidden is the proxy.
+const AUTO_LOCK_HIDDEN_S = 120;
 
 const app = {
   ws: null,
@@ -31,8 +26,7 @@ const app = {
   attempts: 0,
   reconnectTimer: 0,
   wakeLock: null,
-  lastTick: Date.now(),
-  muteLockTimer: 0,
+  hiddenAt: 0,
 };
 
 // ---- boot ----
@@ -54,7 +48,6 @@ ui.init({
 
 ui.showLogin();
 requestAnimationFrame(levelLoop);
-setInterval(() => (app.lastTick = Date.now()), 5000); // heartbeat for lock detection
 
 // ---- login / pairing (both run inside a tap: iOS gates audio on a gesture) ----
 
@@ -100,7 +93,6 @@ function lock() {
   app.started = false;
   app.ready = false;
   clearTimeout(app.reconnectTimer);
-  clearTimeout(app.muteLockTimer);
   const ws = app.ws;
   app.ws = null;
   if (ws) ws.close();
@@ -130,12 +122,9 @@ async function beginSession() {
     app.mic = new MicCapture(app.ctx);
     await app.mic.start();
     app.mic.onchunk = (pcm, level) => {
-      app.lastTick = Date.now(); // flowing capture = the page is truly alive
       if (!app.muted && app.ready && app.ws?.readyState === WebSocket.OPEN) app.ws.send(pcm);
       if (ui.currentState() === "listening" && !app.muted) ui.setLevel(level * 4);
     };
-    app.mic.onmute = micInterrupted;
-    app.mic.onunmute = () => clearTimeout(app.muteLockTimer);
   } catch (err) {
     app.mic = null;
     ui.toast(`Microphone unavailable (${err.name}). Text input still works.`, true);
@@ -277,32 +266,18 @@ function toggleMute() {
   send({ type: "mute", muted: app.muted });
 }
 
-// ---- iOS lifecycle: app switches keep the chat alive; a locked phone locks the app ----
-
-// Something took the mic — the lock button, Siri, a phone call. Speech stops
-// dead either way (better silent than resuming a stale answer minutes later);
-// if it happens while backgrounded, treat it as the phone locking.
-function micInterrupted() {
-  app.playback?.flush();
-  ui.setLevel(0);
-  if (!app.started || document.visibilityState !== "hidden") return;
-  clearTimeout(app.muteLockTimer);
-  app.muteLockTimer = setTimeout(() => {
-    // Still hidden when this fires (frozen timers replay on wake): really a lock.
-    if (document.visibilityState === "hidden") lock();
-  }, 2000); // a route blip unmutes and cancels this
-}
+// ---- iOS lifecycle: Safari suspends the tab; treat return like a dropped phone ----
 
 async function resumeFromSuspend() {
-  if (document.visibilityState !== "visible" || !app.started) return;
-  clearTimeout(app.muteLockTimer);
-  // A frozen page means the phone was locked: whoever just woke it gets the
-  // login screen, not a live mic.
-  if (Date.now() - app.lastTick > FROZEN_LOCK_MS) {
+  if (document.visibilityState !== "visible") return;
+  // Auto-lock wins over resume after prolonged backgrounding; quick app switches stay seamless.
+  const hiddenFor = app.hiddenAt ? Date.now() - app.hiddenAt : 0;
+  app.hiddenAt = 0;
+  if (app.started && hiddenFor > AUTO_LOCK_HIDDEN_S * 1000) {
     lock();
     return;
   }
-  app.lastTick = Date.now();
+  if (!app.started) return;
   await app.ctx.resume().catch(() => {});
   if (app.mic && !app.mic.live()) {
     await app.mic.restart().catch(() => ui.toast("Microphone lost. Reopen the app.", true));
@@ -315,7 +290,8 @@ async function resumeFromSuspend() {
 }
 
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") resumeFromSuspend();
+  if (document.visibilityState === "hidden") app.hiddenAt = Date.now();
+  else resumeFromSuspend();
 });
 window.addEventListener("pageshow", resumeFromSuspend);
 window.addEventListener("online", resumeFromSuspend);
