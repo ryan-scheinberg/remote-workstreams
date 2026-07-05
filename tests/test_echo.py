@@ -21,16 +21,20 @@ def guard(start: float = 1000.0) -> tuple[EchoGuard, SimpleNamespace]:
     return EchoGuard(now=lambda: clock.t), clock
 
 
-def test_echo_matches_on_majority_word_overlap() -> None:
+def test_echo_matches_verbatim_run_not_topical_overlap() -> None:
     g, _ = guard()
     g.start_utterance()
-    g.note_sentence("Hey Ryan, I'm here. The build is green and deploys are live.")
+    g.note_sentence("The build is green and every deploy just went out clean.")
     g.note_audio(ONE_SECOND)
-    assert g.is_echo("The build is green")
-    assert g.is_echo("build is GREEN and deploys")
-    assert g.is_echo("hey brian I'm here")  # STT mishears its own speaker
+    # A long verbatim run of what we said = echo.
+    assert g.is_echo("the build is green and every deploy")
+    assert g.is_echo("The BUILD is green and every deploy just went")
+    # A human reply reusing the topic's words, but not quoting us verbatim, passes.
+    assert not g.is_echo("did the build go green or not")
+    assert not g.is_echo("so every deploy is done then great")
+    # Short utterances — barge-ins included — always pass (never suppressed).
     assert not g.is_echo("wait stop that")
-    assert not g.is_echo("no cancel everything please")
+    assert not g.is_echo("no the build")
     assert not g.is_echo("")
     assert not g.is_echo("   ")
 
@@ -38,19 +42,19 @@ def test_echo_matches_on_majority_word_overlap() -> None:
 def test_no_audio_sent_means_no_echo() -> None:
     g, _ = guard()
     g.start_utterance()
-    g.note_sentence("Nothing has been played yet.")
-    assert not g.is_echo("nothing has been played")
+    g.note_sentence("Nothing at all has been played yet.")
+    assert not g.is_echo("nothing at all has been played")
 
 
 def test_window_tracks_playback_duration() -> None:
     g, clock = guard()
     g.start_utterance()
-    g.note_sentence("Deploys are live.")
+    g.note_sentence("The deploys are all live now.")
     g.note_audio(ONE_SECOND)  # playback ends at t0 + 1.0
     clock.t += 2.0  # inside 1.0 + 1.5 margin
-    assert g.is_echo("deploys are live")
+    assert g.is_echo("the deploys are all live")
     clock.t += 1.0  # t0 + 3.0: past the window
-    assert not g.is_echo("deploys are live")
+    assert not g.is_echo("the deploys are all live")
 
 
 def test_cut_off_shrinks_the_window_to_what_played() -> None:
@@ -61,9 +65,9 @@ def test_cut_off_shrinks_the_window_to_what_played() -> None:
     clock.t += 1.0
     g.cut_off()  # client flushed after ~1s of playback
     clock.t += 1.0  # t0 + 2.0 < 1.0 + 1.5
-    assert g.is_echo("a very long reply")
+    assert g.is_echo("a very long reply that")
     clock.t += 0.7  # t0 + 2.7 > 1.0 + 1.5
-    assert not g.is_echo("a very long reply")
+    assert not g.is_echo("a very long reply that")
 
 
 def test_start_utterance_resets() -> None:
@@ -77,14 +81,14 @@ def test_start_utterance_resets() -> None:
 
 async def test_echo_interim_while_speaking_does_not_barge_in() -> None:
     tts = FakeTTS(hold_first=True)
-    convo = FakeConvo(replies=[["The build is green and deploys are live."], ["Fine."]])
+    convo = FakeConvo(replies=[["The build is green and every deploy is live."], ["Fine."]])
     pipeline, stt, tts, convo, sink = build(convo=convo, tts=tts)
     task = asyncio.create_task(pipeline.run())
 
-    stt.push(chunk("status update please", is_final=True, speech_final=True))
+    stt.push(chunk("status update please now", is_final=True, speech_final=True))
     await wait_for(lambda: PipelineState.SPEAKING in sink.states and sink.audio_chunks)
 
-    stt.push(chunk("the build is green"))  # the phone hearing our own TTS
+    stt.push(chunk("the build is green and every deploy"))  # the phone hearing our own TTS
     await asyncio.sleep(0.1)
     assert PipelineState.INTERRUPTED not in sink.states
     assert not any("build" in text for _, text, _ in sink.transcripts)
@@ -97,7 +101,7 @@ async def test_echo_interim_while_speaking_does_not_barge_in() -> None:
 
 
 async def test_post_stream_echo_does_not_become_a_turn() -> None:
-    convo = FakeConvo(replies=[["Deploys are live."]])
+    convo = FakeConvo(replies=[["Every deploy just went out clean and green."]])
     pipeline, stt, tts, convo, sink = build(convo=convo)
     task = asyncio.create_task(pipeline.run())
 
@@ -105,7 +109,7 @@ async def test_post_stream_echo_does_not_become_a_turn() -> None:
     await wait_for(lambda: sink.speech_ends == 1 and sink.states[-1] is PipelineState.LISTENING)
 
     # Server-side the utterance is over, but the phone is still playing it out.
-    stt.push(chunk("deploys are live", is_final=True, speech_final=True))
+    stt.push(chunk("every deploy just went out clean", is_final=True, speech_final=True))
     await asyncio.sleep(0.1)
     assert convo.turns == ["go"]  # echo never committed as user speech
 
