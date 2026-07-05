@@ -74,6 +74,7 @@ async function beginSession() {
   app.ctx = new (window.AudioContext || window.webkitAudioContext)();
   await app.ctx.resume().catch(() => {});
   app.playback = new Playback(app.ctx);
+  if (!(await app.playback.unlock())) ui.toast("Audio output blocked — reload and retry", true);
 
   try {
     app.mic = new MicCapture(app.ctx);

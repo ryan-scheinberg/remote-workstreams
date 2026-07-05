@@ -66,10 +66,27 @@ export class Playback {
     this.analyser = ctx.createAnalyser();
     this.analyser.fftSize = 512;
     this.gain.connect(this.analyser);
-    this.analyser.connect(ctx.destination);
+    // Sink through a media element, not ctx.destination: iOS mutes Web-Audio-only
+    // output on the ringer switch; element playback uses the media category and
+    // keeps speaking with the phone on silent. Scheduling stays on the ctx clock.
+    this.mediaDest = ctx.createMediaStreamDestination();
+    this.analyser.connect(this.mediaDest);
+    this.el = new Audio();
+    this.el.srcObject = this.mediaDest.stream;
+    this.el.playsInline = true;
     this.nextTime = 0;
     this.active = new Set();
     this.waveform = new Uint8Array(this.analyser.fftSize);
+  }
+
+  // Must be called from a user gesture once; keeps the element playing after.
+  async unlock() {
+    try {
+      await this.el.play();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   setRate(rate) {
