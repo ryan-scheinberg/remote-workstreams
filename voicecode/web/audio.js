@@ -74,19 +74,42 @@ export class Playback {
     this.el = new Audio();
     this.el.srcObject = this.mediaDest.stream;
     this.el.playsInline = true;
+    document.body.appendChild(this.el);
+    // iOS pauses live-stream elements on audio-session interruptions (mic
+    // category switches, route changes); resume instantly or speech dies mid-word.
+    this.unlocked = false;
+    this.el.addEventListener("pause", () => {
+      if (this.unlocked) this.el.play().catch(() => {});
+    });
     this.nextTime = 0;
     this.active = new Set();
     this.waveform = new Uint8Array(this.analyser.fftSize);
+    this._watchdog = 0;
   }
 
   // Must be called from a user gesture once; keeps the element playing after.
   async unlock() {
     try {
       await this.el.play();
+      this.unlocked = true;
       return true;
     } catch {
       return false;
     }
+  }
+
+  // While scheduled audio remains, keep the element playing and the ctx running.
+  _watch() {
+    if (this._watchdog) return;
+    this._watchdog = setInterval(() => {
+      if (this.ctx.currentTime >= this.nextTime) {
+        clearInterval(this._watchdog);
+        this._watchdog = 0;
+        return;
+      }
+      if (this.ctx.state === "suspended") this.ctx.resume().catch(() => {});
+      if (this.unlocked && this.el.paused) this.el.play().catch(() => {});
+    }, 300);
   }
 
   setRate(rate) {
@@ -109,6 +132,7 @@ export class Playback {
     this.nextTime = at + buffer.duration;
     this.active.add(src);
     src.onended = () => this.active.delete(src);
+    this._watch();
   }
 
   // Barge-in kill: stop everything scheduled, immediately.

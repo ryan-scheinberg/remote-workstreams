@@ -124,6 +124,9 @@ def create_app(
             status=response.status_code,
             duration_ms=round((time.monotonic() - started) * 1000, 1),
         )
+        # Revalidate everything: iOS otherwise keeps serving a stale app.js
+        # across deploys (heuristic caching — the PWA has no build hashes).
+        response.headers.setdefault("Cache-Control", "no-cache")
         return response
 
     app.include_router(router=api.router)
