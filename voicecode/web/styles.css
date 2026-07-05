@@ -359,6 +359,15 @@ button {
 .ws.running .ws-dot { background: var(--teal); box-shadow: 0 0 8px var(--teal); }
 .ws.gone .ws-dot { background: var(--gray); }
 
+.ws-end {
+  flex: none;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--faint);
+  border-radius: 8px;
+}
+.ws-end.armed { color: var(--red, #e5484d); }
+
 .ws-title {
   flex: 1;
   min-width: 0;
@@ -369,26 +378,6 @@ button {
   white-space: nowrap;
 }
 .ws.gone .ws-title { color: var(--dim); }
-
-.ws-when { font-size: 10px; color: var(--faint); flex: none; }
-
-.ws-name {
-  margin-top: 3px;
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  color: var(--dim);
-}
-
-.ws-tail {
-  margin-top: 8px;
-  font-size: 10.5px;
-  line-height: 1.55;
-  color: var(--dim);
-  white-space: pre-wrap;
-  word-break: break-word;
-  user-select: text;
-  -webkit-user-select: text;
-}
 
 .ws-actions {
   display: grid;
@@ -411,7 +400,7 @@ button {
 /* one primary action (+ Workstream), one quiet utility (Compact) */
 #actionbar {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr 1fr;
   gap: 10px;
   padding: 10px 16px 0;
 }
@@ -435,11 +424,7 @@ button {
   border-color: color-mix(in srgb, var(--teal) 35%, var(--line));
 }
 
-#btn-compact {
-  padding: 13px 14px;
-  font-size: 11px;
-  color: var(--faint);
-}
+#btn-compact { color: var(--faint); }
 
 #btn-plan .spin {
   display: none;

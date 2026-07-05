@@ -11,6 +11,7 @@ CLIENT_MESSAGES = [
     protocol.LaunchWorkstream(plan_id="p1"),
     protocol.SendToWorkstream(workstream="ws-auth"),
     protocol.CheckIn(workstream="ws-auth"),
+    protocol.EndWorkstream(workstream="ws-auth"),
     protocol.Compact(),
     protocol.Approval(approval_id="a1", approved=True),
 ]

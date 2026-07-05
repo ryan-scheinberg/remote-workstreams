@@ -137,6 +137,9 @@ class Store:
     def set_workstream_status(self, name: str, status: str) -> None:
         self._write("UPDATE workstreams SET status = ? WHERE name = ?", (status, name))
 
+    def remove_workstream(self, name: str) -> None:
+        self._write("DELETE FROM workstreams WHERE name = ?", (name,))
+
     # ---- since-marker (convo transcript line count at the last plan/inject) ----
 
     def get_marker(self) -> int:

@@ -154,6 +154,16 @@ class WorkstreamManager:
         log(logger, "workstream_launched", name=name, cc_session_id=session.session_id)
         await self.push_cards()
 
+    async def end_workstream(self, name: str) -> None:
+        ws = self._workstreams.pop(name, None)
+        if ws is None:
+            await self.notify(protocol.Error(message=f"unknown workstream: {name}"))
+            return
+        await self.substrate.kill(ws.session)
+        self.store.remove_workstream(name)
+        log(logger, "workstream_ended", name=name)
+        await self.push_cards()
+
     async def send_to_workstream(self, name: str) -> None:
         ws = self._workstreams.get(name)
         if ws is None:
@@ -223,6 +233,7 @@ class WorkstreamManager:
             display_name=title,
             settings_file=self._settings_file,
             initial_prompt="/role-root",
+            remote_control=True,  # workstreams show up in the iOS Claude app too
         )
 
     def _convo_lines(self) -> int:

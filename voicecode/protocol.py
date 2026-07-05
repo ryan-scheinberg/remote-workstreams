@@ -73,6 +73,13 @@ class CheckIn(BaseModel):
     workstream: str
 
 
+class EndWorkstream(BaseModel):
+    """Kill the workstream's tmux window and drop its card. The CC transcript survives."""
+
+    type: Literal["end_workstream"] = "end_workstream"
+    workstream: str
+
+
 class Compact(BaseModel):
     type: Literal["compact"] = "compact"
 
@@ -92,6 +99,7 @@ ClientMessage = Annotated[
         LaunchWorkstream,
         SendToWorkstream,
         CheckIn,
+        EndWorkstream,
         Compact,
         Approval,
     ],

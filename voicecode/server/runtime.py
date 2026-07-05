@@ -197,6 +197,9 @@ class ConvoRuntime:
     def send_to_workstream(self, name: str) -> None:
         self._background(self.workstreams.send_to_workstream(name))
 
+    def end_workstream(self, name: str) -> None:
+        self._background(self.workstreams.end_workstream(name))
+
     async def check_in(self, name: str) -> None:
         path = self.workstreams.transcript_path(name)
         if path is None:

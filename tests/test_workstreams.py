@@ -280,3 +280,17 @@ async def test_run_pushes_cards_on_interval(rig):
         await asyncio.sleep(0.005)
     task.cancel()
     assert all(isinstance(m, protocol.Workstreams) for m in notify.messages)
+
+
+async def test_end_workstream_kills_window_and_drops_card(rig):
+    manager, store, substrate, notify, tmp_path = rig
+    await launch(rig)
+    session = substrate.spawned[0]
+
+    await manager.end_workstream("ws-wire-the-auth-flow")
+    assert session.window in substrate.killed
+    assert store.list_workstreams() == []
+    assert notify.messages[-1].workstreams == []
+
+    await manager.end_workstream("ws-wire-the-auth-flow")  # already gone
+    assert isinstance(notify.messages[-1], protocol.Error)

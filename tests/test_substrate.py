@@ -72,10 +72,11 @@ async def test_spawn_full_options():
         name="ws-auth",
         model="fable",
         effort="xhigh",
-        display_name="ws-auth",
+        display_name="Wire the auth flow",
         settings_file=Path("/tmp/ws-settings.json"),
         plugin_dir=Path("/Users/ryanscheinberg/plugins/voice-code"),
         initial_prompt="/voice-code:role-root plan in stint-3.md",
+        remote_control=True,
     )
     session = await sub.spawn(spec)
 
@@ -86,7 +87,8 @@ async def test_spawn_full_options():
 
     expected = (
         f"command claude --session-id {session.session_id} --model fable --effort xhigh"
-        " -n ws-auth --settings /tmp/ws-settings.json"
+        " -n 'Wire the auth flow' --remote-control 'Wire the auth flow'"
+        " --settings /tmp/ws-settings.json"
         " --plugin-dir /Users/ryanscheinberg/plugins/voice-code"
         " '/voice-code:role-root plan in stint-3.md'"
     )

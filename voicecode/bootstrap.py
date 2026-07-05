@@ -26,6 +26,7 @@ def _spec(plugin_dir: Path, *, initial_prompt: str | None = None, resume: bool =
         plugin_dir=plugin_dir,
         initial_prompt=initial_prompt,
         resume=resume,
+        remote_control=True,  # convo shows up in the iOS Claude app too
     )
 
 

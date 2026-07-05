@@ -249,21 +249,12 @@ export function hideStintPlan() {
 
 // ---- workstream cards ----
 
-function relTime(iso) {
-  const t = Date.parse(iso); // protocol timestamps are ISO strings
-  if (Number.isNaN(t)) return "";
-  const s = Math.max(0, (Date.now() - t) / 1000);
-  if (s < 90) return "now";
-  if (s < 5400) return `${Math.round(s / 60)}m ago`;
-  if (s < 129600) return `${Math.round(s / 3600)}h ago`;
-  return `${Math.round(s / 86400)}d ago`;
-}
-
 export function renderWorkstreams(workstreams) {
   const chatPinned = pinned(els.chat); // cards below shrink the chat viewport
   els.workstreams.replaceChildren(); // empty list renders nothing at all
   for (const ws of workstreams) {
-    const label = ws.title || ws.name;
+    // Compact card: status dot + a clear name + the two controls. Nothing else.
+    const label = (ws.title || ws.name).slice(0, 40);
     const card = document.createElement("article");
     card.className = `ws ${ws.status}`;
 
@@ -274,22 +265,25 @@ export function renderWorkstreams(workstreams) {
     const title = document.createElement("span");
     title.className = "ws-title";
     title.textContent = label;
-    const when = document.createElement("span");
-    when.className = "ws-when";
-    when.textContent = ws.last_activity ? relTime(ws.last_activity) : "";
-    head.append(dot, title, when);
-
-    const name = document.createElement("p");
-    name.className = "ws-name";
-    name.textContent = `${ws.name} · ${ws.status}`;
-    card.append(head, name);
-
-    if (ws.tail?.length) {
-      const tail = document.createElement("div");
-      tail.className = "ws-tail";
-      tail.textContent = ws.tail.join("\n");
-      card.append(tail);
-    }
+    const end = document.createElement("button");
+    end.className = "ws-end";
+    end.textContent = "✕";
+    end.setAttribute("aria-label", `End ${label}`);
+    end.addEventListener("click", () => {
+      // Arm-then-confirm: ending kills a live session.
+      if (!end.classList.contains("armed")) {
+        end.classList.add("armed");
+        end.textContent = "End?";
+        setTimeout(() => {
+          end.classList.remove("armed");
+          end.textContent = "✕";
+        }, 3000);
+        return;
+      }
+      if (handlers.onEndWorkstream(ws.name)) toast(`Ended ${label}.`);
+    });
+    head.append(dot, title, end);
+    card.append(head);
 
     const actions = document.createElement("div");
     actions.className = "ws-actions";

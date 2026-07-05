@@ -30,6 +30,7 @@ class SessionSpec:
     plugin_dir: Path | None = None
     initial_prompt: str | None = None  # e.g. "/voice-code:role-root", trailing CLI arg
     resume: bool = False  # resume an existing session id instead of minting one
+    remote_control: bool = False  # visible/drivable from the iOS Claude app
 
 
 @dataclass
@@ -130,6 +131,8 @@ class Substrate:
             "-n",
             spec.display_name,
         ]
+        if spec.remote_control:
+            argv += ["--remote-control", spec.display_name]
         if spec.settings_file is not None:
             argv += ["--settings", str(spec.settings_file)]
         if spec.plugin_dir is not None:

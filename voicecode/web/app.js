@@ -42,6 +42,7 @@ ui.init({
   onLaunch: (planId) => send({ type: "launch_workstream", plan_id: planId }),
   onSendToWorkstream: (name) => send({ type: "send_to_workstream", workstream: name }),
   onCheckIn: (name) => send({ type: "check_in", workstream: name }),
+  onEndWorkstream: (name) => send({ type: "end_workstream", workstream: name }),
   onApproval: (approvalId, approved) => send({ type: "approval", approval_id: approvalId, approved }),
 });
 
