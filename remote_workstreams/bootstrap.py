@@ -12,7 +12,7 @@ from pathlib import Path
 from remote_workstreams.server.store import Store
 from remote_workstreams.substrate import CCSession, SessionSpec, Substrate
 
-CONVO_MODEL = "sonnet"  # token thrift for now; design intent is fable low (brief roster)
+CONVO_MODEL = "fable"
 CONVO_EFFORT = "low"
 CONVO_WINDOW = "convo"
 

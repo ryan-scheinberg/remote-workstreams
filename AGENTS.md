@@ -6,7 +6,6 @@ Voice and phone front-end over **real, interactive Claude Code sessions**: every
 
 - v5 built 2026-07-03, replacing the v4 pass the same week. All tests green, ruff clean.
 - **Device-tested 2026-07-05** end to end: launchd service, `tailscale serve` (tailnet-only), a paired iPhone, real voice turns over live Deepgram+Cartesia, roundtrip passed. First device testing produced two fixes now in main: media-element TTS sink (iOS ringer switch muted Web Audio) and the server-side EchoGuard (iOS echoCancellation let the agent hear itself).
-- Convo runs **sonnet/low for now** (token thrift — `CONVO_MODEL` in bootstrap.py); design intent is fable low per the session roster.
 - The gated real-session test (`tests/test_live_convo.py`, skipped unless `REMOTE_WORKSTREAMS_LIVE=1`) was run once on 2026-07-03 and **passed** (haiku in tmux session `voice-qa`).
 - Home: `github.com/ryan-scheinberg/remote-workstreams`, GPLv3.
 

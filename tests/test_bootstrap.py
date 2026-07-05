@@ -20,8 +20,7 @@ async def test_fresh_spawn_mints_id_and_stores_it(rig):
     (spawned,) = substrate.spawned
     assert spawned is session
     spec = session.spec
-    # CONVO_MODEL is sonnet for now (token thrift); design intent is fable low.
-    assert (spec.name, spec.model, spec.effort) == ("convo", "sonnet", "low")
+    assert (spec.name, spec.model, spec.effort) == ("convo", "fable", "low")
     assert spec.display_name == "convo"
     assert spec.plugin_dir == PLUGIN_DIR
     assert spec.initial_prompt == "/remote-workstreams:role-convo"
