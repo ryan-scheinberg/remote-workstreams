@@ -56,11 +56,10 @@ as repair. What it does:
 1. Preflight: macOS, uv, tmux, and a durable git clone of this repo (defaults to `~/voice-code`)
 2. Tailscale: detects it, guides install and login if missing, captures your MagicDNS name
 3. Stores your two provider keys (Deepgram, Cartesia) in the macOS Keychain
-4. Generates a pairing token (shown to you exactly once) and takes your 4-digit PIN;
-   only scrypt hashes are stored
+4. Takes your 4-digit pairing PIN; only its scrypt hash is stored
 5. Installs and starts the launchd service, verifies `/healthz`
 6. Maps HTTPS on your MagicDNS name to the local service via `tailscale serve`
-7. Prints a pairing QR code — open it on the iPhone, Add to Home Screen, enter token +
+7. Prints a pairing QR code — open it on the iPhone, Add to Home Screen, enter the
    PIN, confirm Face ID
 8. Runs an audio round-trip test (synthesized speech in → transcript → reply audio out)
    and reports the result
@@ -69,12 +68,14 @@ as repair. What it does:
 
 - **Tailnet is the perimeter.** The service binds to localhost; only `tailscale serve`
   exposes it, and only devices on your tailnet can reach it at all.
-- **Pairing, once per device:** pairing token (44 chars, generated at deploy) + your
-  4-digit PIN + WebAuthn registration (Face ID). The server then issues a long-lived,
-  revocable session credential; reconnects present the credential, no re-auth.
+- **Pairing, once per device:** your 4-digit PIN + WebAuthn registration (Face ID);
+  the passkey's public key is stored. Five wrong PINs lock pairing for 10 minutes.
+- **Login, every app open:** one Face ID tap (WebAuthn assertion against the stored
+  passkey) mints a session token held only in server memory (24h TTL) and only in a
+  page variable on the phone — a Lock button, a reload, or a server restart ends it.
 - **Secrets live in the macOS Keychain** (service `voice-code`) — provider keys, and
-  only *hashes* (scrypt) of the pairing token and PIN. Nothing secret in config files.
-- **Credentials are listed and revocable server-side.** Lose a phone, revoke its
+  only a *hash* (scrypt) of the PIN. Nothing secret in config files.
+- **Passkeys are listed and revocable server-side.** Lose a phone, revoke its
   credential.
 
 ## Latency

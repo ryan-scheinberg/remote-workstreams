@@ -1,6 +1,6 @@
 ---
 name: deploy
-description: Deploy voice-code on this Mac — tmux + Tailscale checks, Deepgram/Cartesia keys into the macOS Keychain, pairing token/PIN, launchd install, tailscale serve, pairing QR, round-trip test. Use when the user wants to install, deploy, or repair a voice-code service.
+description: Deploy voice-code on this Mac — tmux + Tailscale checks, Deepgram/Cartesia keys into the macOS Keychain, pairing PIN, launchd install, tailscale serve, pairing QR, round-trip test. Use when the user wants to install, deploy, or repair a voice-code service.
 ---
 
 # Deploy voice-code
@@ -18,8 +18,7 @@ and are all idempotent — re-running any of them is safe.
   — `git clone`, Keychain writes, `launchctl`, `tailscale serve`, installing Tailscale —
   tell the user exactly what you will run and why, and get a yes. Read-only commands
   (`check.sh`, `tailscale status`, `--help`, `curl` of healthz) need no confirmation.
-- **Secrets:** never echo stored secrets back, never write plaintext pairing secrets
-  anywhere. The pairing token is shown to the user exactly once, in Step 4.
+- **Secrets:** never echo stored secrets back, never write the plaintext PIN anywhere.
 - **Re-runs are normal.** This flow doubles as repair: `check.sh` shows what is already
   done; skip completed steps unless the user wants to redo one (e.g. rotate a key).
 
@@ -76,23 +75,21 @@ Same command shape for the other name. Keys go only to the login Keychain (servi
 `voice-code`, matching `voicecode/keychain.py`) — never into files. There is no model
 API key: all model use rides the Mac's Claude Code auth.
 
-## Step 4 — Pairing token and PIN
+## Step 4 — Pairing PIN
 
-Skip if both hashes are `present` and the user isn't re-pairing. Re-doing this step
-invalidates existing pairings — say so before overwriting.
+Skip if `secret_pin-hash=present` and the user isn't changing it. Changing the PIN does
+not invalidate paired devices — it only gates future pairings.
 
-1. Generate a token: `openssl rand -base64 33 | tr '+/' '-_'` (44 URL-safe chars).
-2. Show it to the user **once**, clearly: *"This is your pairing token. You will type it
-   on your iPhone in the final step. It is never shown again — keep it until pairing is
-   done."*
-3. Ask the user to choose a 4-digit PIN (verify it matches `^[0-9]{4}$`).
-4. With their OK, store **hashes only** (the `--hash` flag runs the server's frozen
+1. Ask the user to choose a 4-digit PIN (verify it matches `^[0-9]{4}$`).
+2. With their OK, store the **hash only** (the `--hash` flag runs the server's frozen
    `voicecode.server.auth.hash_secret` — scrypt, salt `voice-code-v1`):
 
 ```
-printf '%s' 'THE_TOKEN' | scripts/store_secret.sh pairing-token-hash --hash "$REPO"
-printf '%s' 'THE_PIN'   | scripts/store_secret.sh pin-hash           --hash "$REPO"
+printf '%s' 'THE_PIN' | scripts/store_secret.sh pin-hash --hash "$REPO"
 ```
+
+Note: 5 wrong PIN attempts lock pairing out for 10 minutes (server-side); a service
+restart also clears the lockout.
 
 ## Step 5 — Install the launchd service
 
@@ -144,10 +141,14 @@ Print the pairing URL as a QR code plus plaintext:
 1. On the iPhone (on the same tailnet, Tailscale app connected), scan the QR or open the
    URL in Safari.
 2. Share → **Add to Home Screen**, then open it from the Home Screen.
-3. Enter the pairing token from Step 4 and the 4-digit PIN.
-4. Approve the Face ID prompt (WebAuthn registration).
+3. Tap **Pair this device**, enter the 4-digit PIN.
+4. Approve the Face ID prompt (WebAuthn registration — the passkey is stored and used
+   for every later unlock).
 
-The phone now holds a long-lived credential; reconnects need no re-auth.
+The phone now holds a passkey; every app open is one Face ID tap (Unlock). After a
+service upgrade that changed the credential schema, or a server restart, existing
+phones just Unlock again — re-pairing is only needed if the server says the passkey
+is no longer valid.
 
 ## Step 8 — Final check and report
 

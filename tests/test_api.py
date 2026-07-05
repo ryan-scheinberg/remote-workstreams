@@ -1,12 +1,12 @@
 import asyncio
+from types import SimpleNamespace
 
 import httpx
 import pytest
 from starlette.testclient import TestClient
 
-from server_fakes import FakeConn, Fakes, make_app
+from server_fakes import FakeConn, Fakes, make_app, seed_session
 from voicecode.server import auth
-from voicecode.server.auth import hash_secret
 
 AUTH = {"Authorization": "Bearer cred-1"}
 APPROVAL_HEADERS = {"X-Voicecode-Token": "boot-token"}
@@ -25,8 +25,10 @@ def client(tmp_path):
         yield client
 
 
-def seed_credential(client, plaintext="cred-1"):
-    return client.app_state.store.create_credential("test-device", hash_secret(plaintext))
+def fake_registration(**kwargs):
+    return SimpleNamespace(
+        credential_id=b"passkey-raw-id", credential_public_key=b"cose-public-key", sign_count=0
+    )
 
 
 def test_healthz_no_auth(client):
@@ -36,13 +38,12 @@ def test_healthz_no_auth(client):
 
 
 def test_pairing_rest_flow(client, monkeypatch):
-    monkeypatch.setenv("PAIRING_TOKEN_HASH", hash_secret("test-token"))
-    monkeypatch.setenv("PIN_HASH", hash_secret("1234"))
-    monkeypatch.setattr(auth, "verify_registration_response", lambda **kwargs: None)
+    monkeypatch.setenv("PIN_HASH", auth.hash_secret("1234"))
+    monkeypatch.setattr(auth, "verify_registration_response", fake_registration)
 
-    assert client.post("/api/pair/start", json={"token": "bad", "pin": "1234"}).status_code == 403
+    assert client.post("/api/pair/start", json={"pin": "0000"}).status_code == 403
 
-    start = client.post("/api/pair/start", json={"token": "test-token", "pin": "1234"})
+    start = client.post("/api/pair/start", json={"pin": "1234"})
     assert start.status_code == 200
     body = start.json()
     assert body["registration_options"]["rp"]["id"] == "testserver"  # RP ID from request host
@@ -53,16 +54,20 @@ def test_pairing_rest_flow(client, monkeypatch):
         headers={"Origin": "https://testserver"},
     )
     assert finish.status_code == 200
-    credential = finish.json()["credential"]
     credential_id = finish.json()["credential_id"]
+    session_token = finish.json()["session_token"]  # freshly paired = logged in
 
-    # the minted credential works as a Bearer token
-    headers = {"Authorization": f"Bearer {credential}"}
+    headers = {"Authorization": f"Bearer {session_token}"}
     assert client.get("/api/credentials", headers=headers).status_code == 200
 
     revoke = client.post(f"/api/credentials/{credential_id}/revoke", headers=headers)
     assert revoke.status_code == 200 and revoke.json() == {"ok": True}
-    assert client.get("/api/credentials", headers=headers).status_code == 401
+    # revoking the passkey doesn't kill the live session, but the passkey can't log in
+    login = client.post("/api/login/start", json={})
+    assert client.post(
+        "/api/login/finish",
+        json={"login_id": login.json()["login_id"], "assertion": {"id": "cGFzc2tleS1yYXctaWQ"}},
+    ).status_code == 403
 
 
 def test_pair_finish_unknown_pairing_id(client):
@@ -70,19 +75,63 @@ def test_pair_finish_unknown_pairing_id(client):
     assert response.status_code == 403
 
 
+def test_login_rest_flow(client, monkeypatch):
+    monkeypatch.setenv("PIN_HASH", auth.hash_secret("1234"))
+    monkeypatch.setattr(auth, "verify_registration_response", fake_registration)
+    monkeypatch.setattr(
+        auth, "verify_authentication_response", lambda **kw: SimpleNamespace(new_sign_count=1)
+    )
+    start = client.post("/api/pair/start", json={"pin": "1234"})
+    client.post(
+        "/api/pair/finish",
+        json={"pairing_id": start.json()["pairing_id"], "attestation": {"id": "x"}},
+    )
+
+    login = client.post("/api/login/start", json={})
+    assert login.status_code == 200
+    body = login.json()
+    assert body["login_id"]
+    assert body["authentication_options"]["rpId"] == "testserver"
+    assert body["authentication_options"]["allowCredentials"] == []
+
+    finish = client.post(
+        "/api/login/finish",
+        json={"login_id": body["login_id"], "assertion": {"id": "cGFzc2tleS1yYXctaWQ"}},
+        headers={"Origin": "https://testserver"},
+    )
+    assert finish.status_code == 200
+    session_token = finish.json()["session_token"]
+    headers = {"Authorization": f"Bearer {session_token}"}
+    assert client.get("/api/credentials", headers=headers).status_code == 200
+
+
+def test_login_finish_bad_assertion_403(client, monkeypatch):
+    from webauthn.helpers.exceptions import InvalidAuthenticationResponse
+
+    def failing_verify(**kwargs):
+        raise InvalidAuthenticationResponse("bad signature")
+
+    monkeypatch.setattr(auth, "verify_authentication_response", failing_verify)
+    login = client.post("/api/login/start", json={})
+    finish = client.post(
+        "/api/login/finish",
+        json={"login_id": login.json()["login_id"], "assertion": {"id": "unknown"}},
+    )
+    assert finish.status_code == 403
+
+
 def test_credentials_listing_and_revoke(client):
-    assert client.get("/api/credentials").status_code == 401
-    cred_id = seed_credential(client)
+    assert client.get("/api/credentials").status_code == 401  # no live session
+    seed_session(client.app_state, "cred-1")
+    cred_id = client.app_state.store.create_credential("test-device", "wcid", b"pk", 0)
     response = client.get("/api/credentials", headers=AUTH)
     assert response.status_code == 200
     creds = response.json()["credentials"]
     assert creds[0]["id"] == cred_id and creds[0]["name"] == "test-device"
-    assert "secret_hash" not in creds[0]
+    assert "public_key" not in creds[0]
 
     assert client.post("/api/credentials/missing/revoke", headers=AUTH).status_code == 404
     assert client.post(f"/api/credentials/{cred_id}/revoke", headers=AUTH).status_code == 200
-    # the revoked credential can no longer call the API
-    assert client.get("/api/credentials", headers=AUTH).status_code == 401
 
 
 # ---- POST /approvals (the phone-approval relay endpoint) ----

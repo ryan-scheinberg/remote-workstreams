@@ -18,7 +18,9 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS credentials (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    secret_hash TEXT NOT NULL,
+    webauthn_credential_id TEXT NOT NULL UNIQUE,
+    public_key BLOB NOT NULL,
+    sign_count INTEGER NOT NULL,
     created_at REAL NOT NULL,
     revoked_at REAL
 );
@@ -63,6 +65,13 @@ class CredentialRow:
     revoked_at: float | None
 
 
+@dataclass
+class Passkey:
+    id: str
+    public_key: bytes
+    sign_count: int
+
+
 class Store:
     def __init__(self, path: Path | str) -> None:
         if isinstance(path, Path):
@@ -72,6 +81,11 @@ class Store:
         self._lock = threading.Lock()
         with self._lock:
             self._conn.execute("PRAGMA journal_mode=WAL")
+            # Auth rework migration: pre-passkey credentials rows have no public key
+            # and can't log in — drop the table; devices re-pair (deliberate).
+            columns = {row[1] for row in self._conn.execute("PRAGMA table_info(credentials)")}
+            if columns and "webauthn_credential_id" not in columns:
+                self._conn.execute("DROP TABLE credentials")
             self._conn.executescript(_SCHEMA)
             self._conn.commit()
 
@@ -134,20 +148,30 @@ class Store:
 
     # ---- credentials ----
 
-    def create_credential(self, name: str, secret_hash: str) -> str:
+    def create_credential(
+        self, name: str, webauthn_credential_id: str, public_key: bytes, sign_count: int
+    ) -> str:
         credential_id = uuid.uuid4().hex[:12]
         self._write(
-            "INSERT INTO credentials (id, name, secret_hash, created_at) VALUES (?, ?, ?, ?)",
-            (credential_id, name, secret_hash, time.time()),
+            "INSERT OR REPLACE INTO credentials"
+            " (id, name, webauthn_credential_id, public_key, sign_count, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (credential_id, name, webauthn_credential_id, public_key, sign_count, time.time()),
         )
         return credential_id
 
-    def credential_valid(self, secret_hash: str) -> bool:
+    def get_passkey(self, webauthn_credential_id: str) -> Passkey | None:
         row = self._fetchone(
-            "SELECT 1 FROM credentials WHERE secret_hash = ? AND revoked_at IS NULL",
-            (secret_hash,),
+            "SELECT id, public_key, sign_count FROM credentials"
+            " WHERE webauthn_credential_id = ? AND revoked_at IS NULL",
+            (webauthn_credential_id,),
         )
-        return row is not None
+        return Passkey(**dict(row)) if row else None
+
+    def set_sign_count(self, credential_id: str, sign_count: int) -> None:
+        self._write(
+            "UPDATE credentials SET sign_count = ? WHERE id = ?", (sign_count, credential_id)
+        )
 
     def list_credentials(self) -> list[CredentialRow]:
         rows = self._fetchall(

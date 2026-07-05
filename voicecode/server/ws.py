@@ -1,6 +1,7 @@
 """The /ws endpoint. Speaks voicecode/protocol.py exactly: first text frame must
-be Hello (invalid credential → Error, close); on success Ready, then chat history
-replay, then the loop. One live socket globally — a new connection takes over.
+be Hello carrying a live session token (invalid → Error, close); on success Ready,
+then chat history replay, then the loop. One live socket globally — a new
+connection takes over.
 """
 
 from __future__ import annotations
@@ -11,10 +12,9 @@ from pydantic import ValidationError
 from starlette.websockets import WebSocket
 
 from voicecode import protocol
-from voicecode.server.auth import credential_ok
+from voicecode.server.auth import LoginManager
 from voicecode.server.logs import log
 from voicecode.server.runtime import ConvoRuntime
-from voicecode.server.store import Store
 
 logger = logging.getLogger("voicecode.server.ws")
 
@@ -54,7 +54,7 @@ class WSConnection:
 
 async def websocket_endpoint(websocket: WebSocket) -> None:
     runtime: ConvoRuntime = websocket.app.state.runtime
-    store: Store = websocket.app.state.store
+    login: LoginManager = websocket.app.state.login
     await websocket.accept()
     conn = WSConnection(websocket)
 
@@ -62,7 +62,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     if hello is None:
         await conn.close_with_error("expected hello")
         return
-    if not credential_ok(store, hello.credential):
+    if not login.session_ok(hello.credential):
         log(logger, "ws_auth_failed")
         await conn.close_with_error("invalid credential")
         return

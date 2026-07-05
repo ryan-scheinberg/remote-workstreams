@@ -67,7 +67,7 @@ else
 fi
 
 # --- Keychain secrets (presence only; values are never printed) ---
-for name in deepgram-api-key cartesia-api-key pairing-token-hash pin-hash; do
+for name in deepgram-api-key cartesia-api-key pin-hash; do
   if security find-generic-password -s voice-code -a "$name" >/dev/null 2>&1; then
     echo "secret_${name}=present"
   else

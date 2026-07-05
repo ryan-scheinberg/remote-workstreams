@@ -6,6 +6,7 @@ in for its exact interface).
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -203,6 +204,15 @@ class Fakes:
         pipeline = FakePipeline(stt, tts, convo, sink)
         self.pipelines.append(pipeline)
         return pipeline
+
+
+def seed_session(state, token: str = "cred-1") -> str:
+    """Admit a known token as a live session — tests skip the WebAuthn ceremony.
+    `state` is app.state."""
+    from voicecode.server import auth
+
+    state.login._sessions[auth._session_hash(token)] = time.time() + auth.SESSION_TTL_SECONDS
+    return token
 
 
 def make_app(tmp_path: Path, fakes: Fakes, web_dir: Path | None = None):

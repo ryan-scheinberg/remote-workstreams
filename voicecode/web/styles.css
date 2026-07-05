@@ -153,17 +153,18 @@ button {
 #state-chip[data-state="thinking"] .chip-dot,
 #state-chip[data-state="connecting"] .chip-dot { animation: blink 1.1s ease-in-out infinite; }
 
-#btn-unpair {
+#btn-lock {
   width: 40px;
   height: 40px;
   flex: none;
   display: grid;
   place-items: center;
   border-radius: 14px;
-  color: var(--faint);
+  color: var(--dim);
+  border: 1px solid var(--line);
 }
-#btn-unpair:active { color: var(--danger); background: var(--elev); }
-#btn-unpair svg { width: 19px; height: 19px; }
+#btn-lock:active { color: var(--danger); background: var(--elev); }
+#btn-lock svg { width: 19px; height: 19px; }
 
 /* shared accent per state (chip, start-screen orb) */
 [data-state="listening"] { --accent: var(--teal); }
@@ -407,9 +408,10 @@ button {
 
 /* ---------- action bar ---------- */
 
+/* one primary action (+ Workstream), one quiet utility (Compact) */
 #actionbar {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr auto;
   gap: 10px;
   padding: 10px 16px 0;
 }
@@ -427,6 +429,17 @@ button {
   color: var(--dim);
 }
 #actionbar button:active { background: var(--elev); color: var(--text); }
+
+#btn-plan {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--teal) 35%, var(--line));
+}
+
+#btn-compact {
+  padding: 13px 14px;
+  font-size: 11px;
+  color: var(--faint);
+}
 
 #btn-plan .spin {
   display: none;
@@ -724,13 +737,30 @@ button {
 }
 .wordmark span { color: var(--teal); }
 
-.start-hint {
-  font-size: 11px;
-  letter-spacing: 0.3em;
-  text-transform: uppercase;
-  color: var(--faint);
-  animation: blink 2.6s ease-in-out infinite;
+#login-unlock {
+  width: 100%;
+  max-width: 340px;
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--teal);
+  color: #06231a;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
+#login-unlock:active { background: color-mix(in srgb, var(--teal) 82%, black); }
+#login-unlock:disabled { opacity: 0.45; }
+
+.screen-link {
+  padding: 10px;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+#pair-form .screen-link { margin-top: 4px; }
 
 #pair-form {
   width: 100%;

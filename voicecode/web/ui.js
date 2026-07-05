@@ -8,7 +8,7 @@ const els = {
   connLabel: $("conn-label"),
   stateChip: $("state-chip"),
   stateLabel: $("state-label"),
-  unpairBtn: $("btn-unpair"),
+  lockBtn: $("btn-lock"),
   chat: $("chat"),
   chatEmpty: $("chat-empty"),
   approvals: $("approvals"),
@@ -26,12 +26,14 @@ const els = {
   planLaunch: $("btn-plan-launch"),
   planDismiss: $("btn-plan-dismiss"),
   toast: $("toast"),
-  screenStart: $("screen-start"),
+  screenLogin: $("screen-login"),
   screenPairing: $("screen-pairing"),
+  loginUnlock: $("login-unlock"),
+  loginPair: $("login-pair"),
   pairForm: $("pair-form"),
-  pairToken: $("pair-token"),
   pairPin: $("pair-pin"),
   pairSubmit: $("pair-submit"),
+  pairBack: $("pair-back"),
   pairError: $("pair-error"),
 };
 
@@ -53,10 +55,12 @@ const STATE_COPY = {
 
 export function init(h) {
   handlers = h;
-  els.screenStart.addEventListener("click", () => handlers.onStart());
+  els.loginUnlock.addEventListener("click", () => handlers.onUnlock());
+  els.loginPair.addEventListener("click", () => showPairing(true));
+  els.pairBack.addEventListener("click", showLogin);
   els.pairForm.addEventListener("submit", (e) => {
     e.preventDefault();
-    handlers.onPair(els.pairToken.value.trim(), els.pairPin.value.trim());
+    handlers.onPair(els.pairPin.value.trim());
   });
   els.muteBtn.addEventListener("click", () => handlers.onMute());
   els.composerSend.addEventListener("click", sendComposer);
@@ -75,17 +79,14 @@ export function init(h) {
   for (const btn of document.querySelectorAll(".sheet-close")) {
     btn.addEventListener("click", hideStintPlan);
   }
-  els.unpairBtn.addEventListener("click", () => {
-    if (confirm("Forget this device's pairing? You'll need the token and PIN again.")) {
-      handlers.onUnpair();
-    }
-  });
+  // Locking must be instant — no confirm tap.
+  els.lockBtn.addEventListener("click", () => handlers.onLock());
 }
 
 // ---- screens ----
 
 export function showPairing(webauthnAvailable) {
-  els.screenStart.hidden = true;
+  els.screenLogin.hidden = true;
   els.screenPairing.hidden = false;
   if (!webauthnAvailable) {
     els.pairSubmit.disabled = true;
@@ -93,19 +94,24 @@ export function showPairing(webauthnAvailable) {
   }
 }
 
-export function showStart() {
+export function showLogin() {
   els.screenPairing.hidden = true;
-  els.screenStart.hidden = false;
+  els.screenLogin.hidden = false;
 }
 
 export function hideScreens() {
-  els.screenStart.hidden = true;
+  els.screenLogin.hidden = true;
   els.screenPairing.hidden = true;
 }
 
 export function pairBusy(busy) {
   els.pairSubmit.disabled = busy;
   els.pairSubmit.textContent = busy ? "Waiting for Face ID…" : "Continue with Face ID";
+}
+
+export function loginBusy(busy) {
+  els.loginUnlock.disabled = busy;
+  els.loginUnlock.textContent = busy ? "Waiting for Face ID…" : "Unlock with Face ID";
 }
 
 export function pairError(message) {

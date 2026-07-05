@@ -7,7 +7,7 @@ import pytest
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from server_fakes import FakeConn, Fakes, make_app
+from server_fakes import FakeConn, Fakes, make_app, seed_session
 from voicecode.audio.state import PipelineState
 from voicecode.protocol import (
     Approval,
@@ -20,7 +20,6 @@ from voicecode.protocol import (
     SendToWorkstream,
     TextInput,
 )
-from voicecode.server.auth import hash_secret
 from voicecode.server.runtime import ProtocolSink
 from voicecode.transcript import AssistantText, ToolActivity, TurnEnd, UserText
 
@@ -35,7 +34,7 @@ def client(tmp_path, fakes):
     app = make_app(tmp_path, fakes)
     with TestClient(app) as client:
         client.app_state = app.state
-        client.app_state.store.create_credential("test-device", hash_secret("cred-1"))
+        seed_session(app.state, "cred-1")
         yield client
 
 
@@ -85,6 +84,28 @@ def test_invalid_credential_gets_error_and_close(client):
             assert msg == {"type": "error", "message": "invalid credential"}
             with pytest.raises(WebSocketDisconnect):
                 ws.receive_text()
+
+
+def test_hello_rejects_store_era_credentials(client):
+    # Passkeys in the store are for login ceremonies, never valid as a WS credential.
+    client.app_state.store.create_credential("old-phone", "wcid", b"pk", 0)
+    with client.websocket_connect("/ws") as ws:
+        assert hello(ws, credential="wcid") == {
+            "type": "error", "message": "invalid credential",
+        }
+
+
+def test_hello_accepts_a_minted_session_and_rejects_it_after_expiry(client):
+    token = client.app_state.login.mint()
+    with client.websocket_connect("/ws") as ws:
+        assert hello(ws, credential=token)["type"] == "ready"
+
+    for key in list(client.app_state.login._sessions):
+        client.app_state.login._sessions[key] = time.time() - 1  # 24h later
+    with client.websocket_connect("/ws") as ws:
+        assert hello(ws, credential=token) == {
+            "type": "error", "message": "invalid credential",
+        }
 
 
 def test_ready_declares_formats(client):

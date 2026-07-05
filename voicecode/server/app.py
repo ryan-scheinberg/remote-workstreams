@@ -17,7 +17,7 @@ from starlette.staticfiles import StaticFiles
 from voicecode.config import Config
 from voicecode.server import api, ws
 from voicecode.server.approvals import Approvals
-from voicecode.server.auth import PairingManager
+from voicecode.server.auth import LoginManager, PairingManager
 from voicecode.server.logs import log, setup_logging
 from voicecode.server.runtime import (
     ClientPush,
@@ -106,6 +106,7 @@ def create_app(
     app.state.approvals = approvals
     app.state.approvals_token = approvals_token
     app.state.pairing = PairingManager(store)
+    app.state.login = LoginManager(store)
 
     @app.middleware("http")
     async def log_requests(request, call_next):

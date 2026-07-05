@@ -1,7 +1,7 @@
 """Secrets via the macOS Keychain (`security` CLI), service name "voice-code".
 
 Env vars win when set (dev and tests); the deploy plugin writes the Keychain entries.
-Secret names: deepgram-api-key, cartesia-api-key, pairing-token-hash, pin-hash.
+Secret names: deepgram-api-key, cartesia-api-key, pin-hash.
 """
 
 from __future__ import annotations

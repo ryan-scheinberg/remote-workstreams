@@ -22,7 +22,7 @@ import uvicorn
 from starlette.testclient import TestClient
 from websockets.sync.client import connect
 
-from server_fakes import Fakes, FakeSubstrate, make_app
+from server_fakes import Fakes, FakeSubstrate, make_app, seed_session
 from voicecode.adapters.stt import STTAdapter, TranscriptChunk
 from voicecode.adapters.tts import TTSAdapter
 from voicecode.audio.pipeline import AudioPipeline
@@ -30,7 +30,6 @@ from voicecode.config import Config
 from voicecode.convo import ConvoBridge
 from voicecode.protocol import Approval, Compact, Hello, PlanStint, TextInput
 from voicecode.server.app import create_app
-from voicecode.server.auth import hash_secret
 from voicecode.server.store import Store
 from voicecode.substrate import CCSession, SessionSpec
 
@@ -186,7 +185,7 @@ def assembled(tmp_path: Path, hold_tts: bool = False):
 
     app.router.lifespan_context = lifespan
     with TestClient(app) as client:
-        app.state.store.create_credential("test-device", hash_secret("cred-1"))
+        seed_session(app.state, "cred-1")
         app.state.runtime.workstreams._poll_interval = 0.02  # file polls, test speed
         yield Rig(client, transcript, substrate, bridge, stts, ttss)
 
@@ -461,7 +460,7 @@ def live_server(tmp_path):
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
     wait_for(lambda: server.started)
-    app.state.store.create_credential("phone", hash_secret("cred-1"))
+    seed_session(app.state, "cred-1")
     yield server.servers[0].sockets[0].getsockname()[1]
     server.should_exit = True
     thread.join(timeout=5)

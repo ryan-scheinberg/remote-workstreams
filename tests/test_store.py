@@ -60,16 +60,49 @@ def test_marker_defaults_to_zero_and_advances(tmp_path):
 
 def test_credentials_lifecycle(tmp_path):
     store = make_store(tmp_path)
-    cred_id = store.create_credential("phone", "hash-1")
-    assert store.credential_valid("hash-1")
-    assert not store.credential_valid("hash-2")
+    cred_id = store.create_credential("phone", "wcid-1", b"public-key", 3)
+    passkey = store.get_passkey("wcid-1")
+    assert passkey.id == cred_id and passkey.public_key == b"public-key"
+    assert passkey.sign_count == 3
+    assert store.get_passkey("wcid-2") is None
     creds = store.list_credentials()
     assert creds[0].id == cred_id and creds[0].name == "phone" and creds[0].revoked_at is None
 
+    store.set_sign_count(cred_id, 4)
+    assert store.get_passkey("wcid-1").sign_count == 4
+
     assert store.revoke_credential(cred_id)
-    assert not store.credential_valid("hash-1")
+    assert store.get_passkey("wcid-1") is None
     assert not store.revoke_credential(cred_id)  # already revoked
     assert not store.revoke_credential("missing")
+
+
+def test_repairing_the_same_passkey_replaces_the_row(tmp_path):
+    store = make_store(tmp_path)
+    store.create_credential("phone", "wcid-1", b"pk-old", 3)
+    new_id = store.create_credential("phone", "wcid-1", b"pk-new", 0)
+    (row,) = store.list_credentials()
+    assert row.id == new_id
+    assert store.get_passkey("wcid-1").public_key == b"pk-new"
+
+
+def test_pre_passkey_credentials_table_is_dropped(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "old.sqlite3"
+    conn = sqlite3.connect(str(path))
+    conn.execute(
+        "CREATE TABLE credentials (id TEXT PRIMARY KEY, name TEXT NOT NULL,"
+        " secret_hash TEXT NOT NULL, created_at REAL NOT NULL, revoked_at REAL)"
+    )
+    conn.execute("INSERT INTO credentials VALUES ('c1', 'old-phone', 'h', 1.0, NULL)")
+    conn.commit()
+    conn.close()
+
+    store = Store(path)  # migration drops the old table; old pairings are gone
+    assert store.list_credentials() == []
+    store.create_credential("phone", "wcid-1", b"pk", 0)
+    assert store.get_passkey("wcid-1") is not None
 
 
 def test_v4_tables_are_dropped(tmp_path):

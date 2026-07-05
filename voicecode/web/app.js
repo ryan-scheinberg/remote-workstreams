@@ -1,33 +1,40 @@
 // voice-code phone client. Transport, audio, and app state live here; pixels
 // live in ui.js. Speaks voicecode/protocol.py over one WebSocket: text frames
 // are JSON messages, binary up is mic PCM, binary down is TTS PCM.
+//
+// Auth: the session token lives ONLY in app.session (a variable) — never in
+// localStorage. Every fresh page load starts at the login screen; Lock wipes
+// the token instantly.
 
 import { MicCapture, Playback } from "./audio.js";
-import { hasWebAuthn, PairError, pairDevice } from "./pairing.js";
+import { loginDevice, PairError, pairDevice } from "./pairing.js";
 import * as ui from "./ui.js";
 
-const CRED_KEY = "voicecode.credential";
+// The web can't distinguish phone-lock from an app switch; time hidden is the proxy.
+const AUTO_LOCK_HIDDEN_S = 120;
 
 const app = {
   ws: null,
   ctx: null,
   mic: null,
   playback: null,
+  unlockPromise: null,
+  session: null, // in-memory session token; null = locked
   muted: false,
   ready: false,
-  started: false, // the one-time user gesture happened
+  started: false, // a logged-in session is live
   attempts: 0,
   reconnectTimer: 0,
   wakeLock: null,
+  hiddenAt: 0,
 };
-
-const credential = () => localStorage.getItem(CRED_KEY);
 
 // ---- boot ----
 
 ui.init({
-  onStart: beginSession,
+  onUnlock: unlock,
   onPair: pair,
+  onLock: lock,
   onMute: toggleMute,
   onText: (text) => send({ type: "text_input", text }),
   onPlanStint: () => send({ type: "plan_stint" }),
@@ -36,21 +43,41 @@ ui.init({
   onSendToWorkstream: (name) => send({ type: "send_to_workstream", workstream: name }),
   onCheckIn: (name) => send({ type: "check_in", workstream: name }),
   onApproval: (approvalId, approved) => send({ type: "approval", approval_id: approvalId, approved }),
-  onUnpair: unpair,
 });
 
-if (credential()) ui.showStart();
-else ui.showPairing(hasWebAuthn());
+ui.showLogin();
+requestAnimationFrame(levelLoop);
 
-// ---- pairing ----
+// ---- login / pairing (both run inside a tap: iOS gates audio on a gesture) ----
 
-async function pair(token, pin) {
+// Must run synchronously in the tap, before the Face ID await eats the gesture.
+function ensureAudio() {
+  if (app.ctx) return;
+  app.ctx = new (window.AudioContext || window.webkitAudioContext)();
+  app.playback = new Playback(app.ctx);
+  app.unlockPromise = app.playback.unlock();
+}
+
+async function unlock() {
+  ensureAudio();
+  ui.loginBusy(true);
+  try {
+    app.session = await loginDevice();
+    await beginSession();
+  } catch (err) {
+    ui.toast(err instanceof PairError ? err.message : `Login failed: ${err.message}`, true);
+  } finally {
+    ui.loginBusy(false);
+  }
+}
+
+async function pair(pin) {
+  ensureAudio();
   ui.pairError("");
   ui.pairBusy(true);
   try {
-    const cred = await pairDevice(token, pin);
-    localStorage.setItem(CRED_KEY, cred);
-    ui.showStart();
+    app.session = await pairDevice(pin);
+    await beginSession();
   } catch (err) {
     ui.pairError(err instanceof PairError ? err.message : `Pairing failed: ${err.message}`);
   } finally {
@@ -58,23 +85,37 @@ async function pair(token, pin) {
   }
 }
 
-function unpair() {
-  localStorage.removeItem(CRED_KEY);
-  if (app.ws) app.ws.close();
-  location.reload();
+// ---- lock: instant — wipe the token, drop everything, back to login ----
+
+function lock() {
+  app.session = null;
+  app.started = false;
+  app.ready = false;
+  clearTimeout(app.reconnectTimer);
+  const ws = app.ws;
+  app.ws = null;
+  if (ws) ws.close();
+  app.mic?.stop();
+  app.mic = null;
+  app.playback?.flush();
+  ui.setConnection("offline");
+  ui.showLogin();
 }
 
-// ---- session start (must run inside a tap: iOS gates AudioContext on a gesture) ----
+// ---- session start ----
 
 async function beginSession() {
   if (app.started) return;
   app.started = true;
   ui.hideScreens();
 
-  app.ctx = new (window.AudioContext || window.webkitAudioContext)();
+  // Network first: audio unlock must never delay (or wedge) the connection.
+  app.attempts = 0;
+  connect();
+  requestWakeLock();
+
   await app.ctx.resume().catch(() => {});
-  app.playback = new Playback(app.ctx);
-  if (!(await app.playback.unlock())) ui.toast("Audio output blocked — reload and retry", true);
+  if (!(await app.unlockPromise)) ui.toast("Audio output blocked — reload and retry", true);
 
   try {
     app.mic = new MicCapture(app.ctx);
@@ -87,14 +128,10 @@ async function beginSession() {
     app.mic = null;
     ui.toast(`Microphone unavailable (${err.name}). Text input still works.`, true);
   }
-
-  connect();
-  requestWakeLock();
-  requestAnimationFrame(levelLoop);
 }
 
 function levelLoop() {
-  if (ui.currentState() === "speaking") ui.setLevel(app.playback.level());
+  if (app.playback && ui.currentState() === "speaking") ui.setLevel(app.playback.level());
   requestAnimationFrame(levelLoop);
 }
 
@@ -118,8 +155,8 @@ function connect() {
   ws.onopen = () => {
     clearTimeout(connectTimeout);
     app.attempts = 0;
-    // State is server-side: re-present the credential, no re-auth.
-    ws.send(JSON.stringify({ type: "hello", credential: credential() }));
+    // Reconnects re-present the in-memory session token; no re-auth while it lives.
+    ws.send(JSON.stringify({ type: "hello", credential: app.session }));
     if (app.muted) ws.send(JSON.stringify({ type: "mute", muted: true }));
   };
 
@@ -204,6 +241,12 @@ function handleMessage(msg) {
       ui.addApproval(msg);
       break;
     case "error":
+      // The session token died (expiry or server restart): back to the login screen.
+      if (msg.message === "invalid credential") {
+        lock();
+        ui.toast("Session expired — unlock again.", true);
+        return;
+      }
       ui.planPending(false); // the pending plan_stint may be what errored
       ui.toast(msg.message, true);
       break;
@@ -224,7 +267,15 @@ function toggleMute() {
 // ---- iOS lifecycle: Safari suspends the tab; treat return like a dropped phone ----
 
 async function resumeFromSuspend() {
-  if (!app.started || document.visibilityState !== "visible") return;
+  if (document.visibilityState !== "visible") return;
+  // Auto-lock wins over resume after prolonged backgrounding; quick app switches stay seamless.
+  const hiddenFor = app.hiddenAt ? Date.now() - app.hiddenAt : 0;
+  app.hiddenAt = 0;
+  if (app.started && hiddenFor > AUTO_LOCK_HIDDEN_S * 1000) {
+    lock();
+    return;
+  }
+  if (!app.started) return;
   await app.ctx.resume().catch(() => {});
   if (app.mic && !app.mic.live()) {
     await app.mic.restart().catch(() => ui.toast("Microphone lost. Reopen the app.", true));
@@ -236,7 +287,10 @@ async function resumeFromSuspend() {
   requestWakeLock();
 }
 
-document.addEventListener("visibilitychange", resumeFromSuspend);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") app.hiddenAt = Date.now();
+  else resumeFromSuspend();
+});
 window.addEventListener("pageshow", resumeFromSuspend);
 window.addEventListener("online", resumeFromSuspend);
 
