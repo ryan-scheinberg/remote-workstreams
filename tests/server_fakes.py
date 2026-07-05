@@ -6,6 +6,7 @@ in for its exact interface).
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -115,6 +116,11 @@ class FakeSubstrate:
             transcript=self.transcript_dir / f"{session_id}.jsonl",
             spec=spec,
         )
+        # A spawned fake is a booted session: its transcript opens with the role
+        # greeting (what _await_ready keys on in the real system).
+        session.transcript.parent.mkdir(parents=True, exist_ok=True)
+        greeting = {"type": "assistant", "message": {"content": [{"type": "text", "text": "Ready."}]}}
+        session.transcript.write_text(json.dumps(greeting) + "\n")
         self.spawned.append(session)
         self.alive_windows.add(session.window)
         return session

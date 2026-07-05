@@ -34,7 +34,7 @@ Notify = Callable[[object], Awaitable[None]]
 
 
 def _slug(title: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:32] or "stint"
+    return re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:32].strip("-") or "stint"
 
 
 def _title(plan_text: str) -> str:
@@ -142,6 +142,10 @@ class WorkstreamManager:
         title = _title(text)
         name = f"ws-{_slug(title)}"
         session = await self.substrate.spawn(self._workstream_spec(name, title))
+        if not await self._await_ready(session):
+            await self.substrate.kill(session)
+            await self.notify(protocol.Error(message="workstream session failed to start"))
+            return
         await self.substrate.send(session, text)  # the full plan is the first message
         self.store.add_workstream(name, session.session_id, session.window, title, str(path))
         self._workstreams[name] = _Workstream(
@@ -235,4 +239,16 @@ class WorkstreamManager:
                 return text
             if time.monotonic() >= deadline:
                 return None
+            await asyncio.sleep(self._poll_interval)
+
+    async def _await_ready(self, session: CCSession) -> bool:
+        """A fresh session swallows pastes until its TUI is up; the role skill's
+        greeting landing in the transcript is the ready signal."""
+        tail = TranscriptTail(session.transcript)
+        deadline = time.monotonic() + self._poll_budget
+        while True:
+            if any(isinstance(entry, AssistantText) for entry in tail.read_new()):
+                return True
+            if time.monotonic() >= deadline:
+                return False
             await asyncio.sleep(self._poll_interval)

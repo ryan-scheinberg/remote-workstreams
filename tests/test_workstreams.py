@@ -228,12 +228,13 @@ async def test_cards_carry_tail_last_activity_and_status(rig):
     manager, store, substrate, notify, tmp_path = rig
     await launch(rig)
     session = substrate.spawned[0]
-    session.transcript.parent.mkdir(parents=True, exist_ok=True)
-    session.transcript.write_text(transcript_lines())
+    with session.transcript.open("a") as f:  # transcripts only ever grow
+        f.write(transcript_lines())
 
     await manager.push_cards()
     (card,) = notify.messages[-1].workstreams
     assert card.tail == [
+        "Ready.",  # the boot greeting FakeSubstrate seeds
         "» Fix the login bug",
         "On it — reading the auth module.",
         "Bash: Check status",
