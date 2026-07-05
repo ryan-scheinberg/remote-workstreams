@@ -23,15 +23,15 @@ from starlette.testclient import TestClient
 from websockets.sync.client import connect
 
 from server_fakes import Fakes, FakeSubstrate, make_app, seed_session
-from voicecode.adapters.stt import STTAdapter, TranscriptChunk
-from voicecode.adapters.tts import TTSAdapter
-from voicecode.audio.pipeline import AudioPipeline
-from voicecode.config import Config
-from voicecode.convo import ConvoBridge
-from voicecode.protocol import Approval, Compact, Hello, NewWorkstream, TextInput
-from voicecode.server.app import create_app
-from voicecode.server.store import Store
-from voicecode.substrate import CCSession, SessionSpec
+from remote_workstreams.adapters.stt import STTAdapter, TranscriptChunk
+from remote_workstreams.adapters.tts import TTSAdapter
+from remote_workstreams.audio.pipeline import AudioPipeline
+from remote_workstreams.config import Config
+from remote_workstreams.convo import ConvoBridge
+from remote_workstreams.protocol import Approval, Compact, Hello, NewWorkstream, TextInput
+from remote_workstreams.server.app import create_app
+from remote_workstreams.server.store import Store
+from remote_workstreams.substrate import CCSession, SessionSpec
 
 TS = "2026-07-03T10:00:00.000Z"
 
@@ -404,7 +404,7 @@ def test_approval_round_trip_while_turn_in_flight(tmp_path):
                 "/approvals",
                 json={"session_id": "ws-1", "tool_name": "Bash",
                       "tool_input": {"command": "git push --force"}},
-                headers={"X-Voicecode-Token": "boot-token"},
+                headers={"X-Workstreams-Token": "boot-token"},
             )
 
         thread = threading.Thread(target=post)

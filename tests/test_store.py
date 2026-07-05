@@ -1,5 +1,5 @@
-from voicecode.server.auth import hash_secret
-from voicecode.server.store import Store
+from remote_workstreams.server.auth import hash_secret
+from remote_workstreams.server.store import Store
 
 
 def make_store(tmp_path) -> Store:

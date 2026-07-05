@@ -6,10 +6,10 @@ import pytest
 from starlette.testclient import TestClient
 
 from server_fakes import FakeConn, Fakes, make_app, seed_session
-from voicecode.server import auth
+from remote_workstreams.server import auth
 
 AUTH = {"Authorization": "Bearer cred-1"}
-APPROVAL_HEADERS = {"X-Voicecode-Token": "boot-token"}
+APPROVAL_HEADERS = {"X-Workstreams-Token": "boot-token"}
 BASH_PAYLOAD = {
     "session_id": "s1",
     "tool_name": "Bash",
@@ -197,7 +197,7 @@ async def test_approvals_non_bash_summary(tmp_path):
 
 
 def test_approvals_bad_token_403(client):
-    for headers in [{}, {"X-Voicecode-Token": "wrong"}]:
+    for headers in [{}, {"X-Workstreams-Token": "wrong"}]:
         response = client.post("/approvals", json=BASH_PAYLOAD, headers=headers)
         assert response.status_code == 403
 

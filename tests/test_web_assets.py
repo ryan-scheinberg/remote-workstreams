@@ -1,7 +1,7 @@
-"""Drift alarms for the static PWA in voicecode/web/.
+"""Drift alarms for the static PWA in remote_workstreams/web/.
 
 No backend or browser: assert the files exist, index.html wires them up, the JS
-speaks voicecode/protocol.py literally (message types, states, audio formats),
+speaks remote_workstreams/protocol.py literally (message types, states, audio formats),
 and every file parses (node --check, when node is installed).
 """
 
@@ -14,9 +14,9 @@ from pathlib import Path
 
 import pytest
 
-from voicecode import protocol
+from remote_workstreams import protocol
 
-WEB = Path(__file__).resolve().parent.parent / "voicecode" / "web"
+WEB = Path(__file__).resolve().parent.parent / "remote_workstreams" / "web"
 REQUIRED = [
     "index.html",
     "styles.css",
@@ -51,7 +51,7 @@ PIPELINE_STATES = set(typing.get_args(protocol.State.model_fields["state"].annot
 
 def test_required_files_exist():
     missing = [name for name in REQUIRED if not (WEB / name).is_file()]
-    assert not missing, f"missing from voicecode/web/: {missing}"
+    assert not missing, f"missing from remote_workstreams/web/: {missing}"
 
 
 def test_index_references_assets():

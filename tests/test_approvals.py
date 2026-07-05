@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from voicecode.server.approvals import Approvals
+from remote_workstreams.server.approvals import Approvals
 
 
 class Notify:

@@ -4,9 +4,9 @@ from pathlib import Path
 import pytest
 
 from server_fakes import FakeSubstrate
-from voicecode import protocol
-from voicecode.server.store import Store
-from voicecode.server.workstreams import WorkstreamManager
+from remote_workstreams import protocol
+from remote_workstreams.server.store import Store
+from remote_workstreams.server.workstreams import WorkstreamManager
 
 PLAN_TEXT = "Stint: Wire the auth flow\n\nGoal: ship it.\n"
 
@@ -74,7 +74,7 @@ async def test_new_workstream_plans_then_launches(rig):
     assert planner.plugin_dir == Path("/plugins/claude-code")
     output = output_path(planner)
     assert planner.initial_prompt == (
-        f"/voice-code:role-stint-plan convo={tmp_path / 'convo.jsonl'}"
+        f"/remote-workstreams:role-stint-plan convo={tmp_path / 'convo.jsonl'}"
         f" since_line=0 output={output}"
     )
     assert output.parent == tmp_path / "data" / "plans"
@@ -160,7 +160,7 @@ async def test_send_to_workstream_ferries_directive_and_advances_marker(rig):
     assert (spec.name, spec.model, spec.effort) == ("inject", "opus", "high")
     output = output_path(spec)
     assert spec.initial_prompt == (
-        f"/voice-code:role-inject convo={tmp_path / 'convo.jsonl'} since_line=2"
+        f"/remote-workstreams:role-inject convo={tmp_path / 'convo.jsonl'} since_line=2"
         f" workstream={ws_session.transcript} output={output}"
     )
     output.write_text("Focus the retry loop on idempotent writes only.")

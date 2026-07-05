@@ -1,4 +1,4 @@
-# voice-code
+# remote-workstreams
 
 Hold a natural spoken conversation with Claude Code while it does real agentic work.
 Your Mac runs everything — the audio pipeline, the sessions, the state. Your iPhone is
@@ -12,8 +12,11 @@ session inherits your full Claude Code setup (skills, hooks, CLAUDE.md, permissi
 rules) natively, and no model API key exists anywhere — all model use rides Claude
 Code auth. A persistent conversation session talks with you; planner and injector
 sessions turn that conversation into **workstreams** — execution sessions you watch
-as live cards on the phone. If the phone drops — call, dead spot, Safari suspending —
-the sessions live on in tmux; reconnect and resume mid-conversation.
+as live cards on the phone. The conversation and every workstream launch with
+`--remote-control`, so each one also shows up in the Claude iOS app — you get a
+native ping when a session goes live, and a second window into any workstream. If
+the phone drops — call, dead spot, Safari suspending — the sessions live on in tmux;
+reconnect and resume mid-conversation.
 
 ## Topology
 
@@ -44,16 +47,16 @@ iPhone (Safari PWA) ──WebSocket/HTTPS over Tailscale──> Mac
 From Claude Code:
 
 ```
-/plugin marketplace add ryan-scheinberg/voice-code
-/plugin install voice-code@voice-code
-/voice-code:deploy
+/plugin marketplace add ryan-scheinberg/remote-workstreams
+/plugin install remote-workstreams@remote-workstreams
+/remote-workstreams:deploy
 ```
 
-`/voice-code:deploy` is a guided deploy run by Claude on your Mac. It confirms every
+`/remote-workstreams:deploy` is a guided deploy run by Claude on your Mac. It confirms every
 system-touching action with you before running it, and it is safe to re-run — it doubles
 as repair. What it does:
 
-1. Preflight: macOS, uv, tmux, and a durable git clone of this repo (defaults to `~/voice-code`)
+1. Preflight: macOS, uv, tmux, and a durable git clone of this repo (defaults to `~/remote-workstreams`)
 2. Tailscale: detects it, guides install and login if missing, captures your MagicDNS name
 3. Stores your two provider keys (Deepgram, Cartesia) in the macOS Keychain
 4. Takes your 4-digit pairing PIN; only its scrypt hash is stored
@@ -73,7 +76,7 @@ as repair. What it does:
 - **Login, every app open:** one Face ID tap (WebAuthn assertion against the stored
   passkey) mints a session token held only in server memory (24h TTL) and only in a
   page variable on the phone — a Lock button, a reload, or a server restart ends it.
-- **Secrets live in the macOS Keychain** (service `voice-code`) — provider keys, and
+- **Secrets live in the macOS Keychain** (service `remote-workstreams`) — provider keys, and
   only a *hash* (scrypt) of the PIN. Nothing secret in config files.
 - **Passkeys are listed and revocable server-side.** Lose a phone, revoke its
   credential.
@@ -96,25 +99,25 @@ uvx ruff check .   # lint
 
 | Path | What it is |
 |---|---|
-| `voicecode/substrate.py` | tmux substrate — spawn/inject/kill Claude Code sessions as windows |
-| `voicecode/transcript.py` | Claude Code transcript JSONL parsing (the only format-aware module) |
-| `voicecode/convo.py` | ConvoBridge — the voice/UI face of the persistent conversation session |
-| `voicecode/protocol.py` | WebSocket messages client ⇄ server, audio formats |
-| `voicecode/config.py` | Runtime config; `VOICECODE_*` env overrides |
-| `voicecode/keychain.py` | Secrets via the macOS Keychain; env vars win in dev/tests |
-| `voicecode/adapters/` | `STTAdapter`, `TTSAdapter` + Deepgram, Cartesia implementations |
-| `voicecode/audio/` | Pipeline state machine (`listening/thinking/speaking/interrupted`), round-trip test |
-| `voicecode/server/` | FastAPI service, WebSocket, workstreams, approvals, SQLite store, auth |
-| `voicecode/web/` | The static PWA |
+| `remote_workstreams/substrate.py` | tmux substrate — spawn/inject/kill Claude Code sessions as windows |
+| `remote_workstreams/transcript.py` | Claude Code transcript JSONL parsing (the only format-aware module) |
+| `remote_workstreams/convo.py` | ConvoBridge — the voice/UI face of the persistent conversation session |
+| `remote_workstreams/protocol.py` | WebSocket messages client ⇄ server, audio formats |
+| `remote_workstreams/config.py` | Runtime config; `REMOTE_WORKSTREAMS_*` env overrides |
+| `remote_workstreams/keychain.py` | Secrets via the macOS Keychain; env vars win in dev/tests |
+| `remote_workstreams/adapters/` | `STTAdapter`, `TTSAdapter` + Deepgram, Cartesia implementations |
+| `remote_workstreams/audio/` | Pipeline state machine (`listening/thinking/speaking/interrupted`), round-trip test |
+| `remote_workstreams/server/` | FastAPI service, WebSocket, workstreams, approvals, SQLite store, auth |
+| `remote_workstreams/web/` | The static PWA |
 | `hooks/` | `ask_phone.py` — the phone-approval relay hook client |
 | `skills/` | `role-convo`, `role-stint-plan`, `role-inject`, and the deploy skill |
-| `plugins/claude-code/` | Claude Code plugin wrapper (`/voice-code:deploy` + skills) |
+| `plugins/claude-code/` | Claude Code plugin wrapper (`/remote-workstreams:deploy` + skills) |
 | `tests/` | pytest, mirroring module names |
 
 ## Tailscale Funnel
 
 `tailscale funnel` can expose the service to the public internet. This is documented as
-a pointer only and is **unsupported**: voice-code's auth assumes the tailnet perimeter,
+a pointer only and is **unsupported**: remote-workstreams's auth assumes the tailnet perimeter,
 and v1 has no public-internet hardening (rate limiting, lockout). Don't do it unless you
 understand exactly what you're removing.
 

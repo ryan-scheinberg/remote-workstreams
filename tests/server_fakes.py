@@ -1,5 +1,5 @@
 """Fakes injected through create_app's DI — server tests never touch live APIs or
-tmux, and never import voicecode.convo (built in parallel; FakeConvoBridge stands
+tmux, and never import remote_workstreams.convo (built in parallel; FakeConvoBridge stands
 in for its exact interface).
 """
 
@@ -12,14 +12,14 @@ import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
 
-from voicecode.adapters.stt import STTAdapter, TranscriptChunk
-from voicecode.adapters.tts import TTSAdapter
-from voicecode.audio.state import PipelineState
-from voicecode.config import Config
-from voicecode.server.app import create_app
-from voicecode.server.store import Store
-from voicecode.substrate import CCSession, SessionSpec
-from voicecode.transcript import Entry
+from remote_workstreams.adapters.stt import STTAdapter, TranscriptChunk
+from remote_workstreams.adapters.tts import TTSAdapter
+from remote_workstreams.audio.state import PipelineState
+from remote_workstreams.config import Config
+from remote_workstreams.server.app import create_app
+from remote_workstreams.server.store import Store
+from remote_workstreams.substrate import CCSession, SessionSpec
+from remote_workstreams.transcript import Entry
 
 
 class FakeSTT(STTAdapter):
@@ -38,7 +38,7 @@ class FakeTTS(TTSAdapter):
 
 
 class FakeConvoBridge:
-    """Same surface as voicecode.convo.ConvoBridge; records everything."""
+    """Same surface as remote_workstreams.convo.ConvoBridge; records everything."""
 
     def __init__(self) -> None:
         self.history_entries: list[Entry] = []
@@ -221,7 +221,7 @@ class Fakes:
 def seed_session(state, token: str = "cred-1") -> str:
     """Admit a known token as a live session — tests skip the WebAuthn ceremony.
     `state` is app.state."""
-    from voicecode.server import auth
+    from remote_workstreams.server import auth
 
     state.login._sessions[auth._session_hash(token)] = time.time() + auth.SESSION_TTL_SECONDS
     return token

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""voice-code phone-approval relay: PreToolUse hook JSON on stdin, verdict on stdout.
+"""remote-workstreams phone-approval relay: PreToolUse hook JSON on stdin, verdict on stdout.
 
 Two modes:
-- default (pure relay): POST the payload to the local voice-code service and wait
+- default (pure relay): POST the payload to the local remote-workstreams service and wait
   for the phone's allow/deny.
 - --gate-bash: only relay Bash commands matching the short destructive list below;
   everything else exits silently and instantly.
@@ -49,7 +49,7 @@ def main() -> None:
     request = urllib.request.Request(
         f"http://127.0.0.1:{args.port}/approvals",
         data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json", "X-Voicecode-Token": args.token},
+        headers={"Content-Type": "application/json", "X-Workstreams-Token": args.token},
     )
     try:
         with urllib.request.urlopen(request, timeout=args.wait) as response:
@@ -61,7 +61,7 @@ def main() -> None:
             "hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
                 "permissionDecision": decision,
-                "permissionDecisionReason": "voice-code phone approval",
+                "permissionDecisionReason": "remote-workstreams phone approval",
             }
         }
         print(json.dumps(output))

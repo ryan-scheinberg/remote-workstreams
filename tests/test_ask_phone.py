@@ -65,10 +65,10 @@ def test_allow_prints_permission_decision(stub_port):
     output = json.loads(result.stdout)["hookSpecificOutput"]
     assert output["hookEventName"] == "PreToolUse"
     assert output["permissionDecision"] == "allow"
-    assert output["permissionDecisionReason"] == "voice-code phone approval"
+    assert output["permissionDecisionReason"] == "remote-workstreams phone approval"
     (path, headers, body) = StubHandler.requests[0]
     assert path == "/approvals"
-    assert headers["X-Voicecode-Token"] == "tok-1"
+    assert headers["X-Workstreams-Token"] == "tok-1"
     assert body == BASH_PAYLOAD  # the raw hook JSON is relayed untouched
 
 

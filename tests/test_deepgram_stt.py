@@ -6,8 +6,8 @@ import asyncio
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
-from voicecode.adapters import deepgram_stt
-from voicecode.adapters.deepgram_stt import DeepgramSTT
+from remote_workstreams.adapters import deepgram_stt
+from remote_workstreams.adapters.deepgram_stt import DeepgramSTT
 
 
 def results(text: str, *, is_final: bool = False, speech_final: bool = False):

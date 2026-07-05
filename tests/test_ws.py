@@ -8,8 +8,8 @@ from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from server_fakes import FakeConn, Fakes, make_app, seed_session
-from voicecode.audio.state import PipelineState
-from voicecode.protocol import (
+from remote_workstreams.audio.state import PipelineState
+from remote_workstreams.protocol import (
     Approval,
     CheckIn,
     ClearConvo,
@@ -20,8 +20,8 @@ from voicecode.protocol import (
     SendToWorkstream,
     TextInput,
 )
-from voicecode.server.runtime import ProtocolSink
-from voicecode.transcript import AssistantText, ToolActivity, TurnEnd, UserText
+from remote_workstreams.server.runtime import ProtocolSink
+from remote_workstreams.transcript import AssistantText, ToolActivity, TurnEnd, UserText
 
 
 @pytest.fixture
@@ -257,7 +257,7 @@ def test_approval_round_trips_ws_and_http(client):
                     "tool_name": "Bash",
                     "tool_input": {"command": "rm -rf /tmp/x"},
                 },
-                headers={"X-Voicecode-Token": "boot-token"},
+                headers={"X-Workstreams-Token": "boot-token"},
             )
 
         thread = threading.Thread(target=post)

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Stores one voice-code secret in the login Keychain (service "voice-code").
+# Stores one remote-workstreams secret in the login Keychain (service "remote-workstreams").
 # Reads the value from stdin. Idempotent: -U updates an existing entry in place.
 #
 # Usage:
 #   printf '%s' "$VALUE" | store_secret.sh NAME              # API keys, stored as-is
 #   printf '%s' "$VALUE" | store_secret.sh NAME --hash REPO  # pairing secrets, hash only
 #
-# --hash pipes the value through voicecode.server.auth.hash_secret (scrypt,
+# --hash pipes the value through remote_workstreams.server.auth.hash_secret (scrypt,
 # salt voice-code-v1 — the server's frozen contract) inside REPO's uv
 # environment, so only the hash ever reaches the Keychain.
 set -euo pipefail
@@ -31,11 +31,11 @@ if [ "${2:-}" = "--hash" ]; then
   fi
   REPO="${3:?usage: store_secret.sh NAME --hash REPO_DIR}"
   VALUE="$(printf '%s' "$VALUE" | (cd "$REPO" && uv run python -c \
-    'import sys; from voicecode.server.auth import hash_secret; print(hash_secret(sys.stdin.read().strip()))'))"
+    'import sys; from remote_workstreams.server.auth import hash_secret; print(hash_secret(sys.stdin.read().strip()))'))"
 elif [ "$NEEDS_HASH" = yes ]; then
   echo "error=hash-required name=$NAME use=--hash"
   exit 2
 fi
 
-security add-generic-password -U -s voice-code -a "$NAME" -w "$VALUE"
+security add-generic-password -U -s remote-workstreams -a "$NAME" -w "$VALUE"
 echo "stored=$NAME"

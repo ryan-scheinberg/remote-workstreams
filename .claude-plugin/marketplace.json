@@ -1,11 +1,11 @@
 {
-  "name": "voice-code",
+  "name": "remote-workstreams",
   "owner": { "name": "Ryan Scheinberg", "url": "https://github.com/ryan-scheinberg" },
   "plugins": [
     {
-      "name": "voice-code",
+      "name": "remote-workstreams",
       "source": "./plugins/claude-code",
-      "displayName": "voice-code",
+      "displayName": "remote-workstreams",
       "description": "Voice interface for Claude Code — hold a natural spoken conversation with your coding assistant while it does real agentic work. Mac is the brain, iPhone is a thin terminal, Tailscale is the wire.",
       "category": "Developer Tools",
       "tags": ["voice", "claude-code", "tailscale", "speech", "assistant", "self-hosted"],

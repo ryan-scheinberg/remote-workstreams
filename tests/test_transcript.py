@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from voicecode.transcript import (
+from remote_workstreams.transcript import (
     AssistantText,
     ToolActivity,
     TranscriptTail,
@@ -78,7 +78,7 @@ def test_file_tool_label_uses_basename():
                 {
                     "type": "tool_use",
                     "name": "Read",
-                    "input": {"file_path": "/Users/alice/x/voicecode/audio/pipeline.py"},
+                    "input": {"file_path": "/Users/alice/x/remote_workstreams/audio/pipeline.py"},
                 }
             ]
         },

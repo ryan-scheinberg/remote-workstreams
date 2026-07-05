@@ -1,6 +1,6 @@
 ---
 name: role-convo
-description: Install the conversation role on a session. Makes it the spoken layer of voice-code — every reply is piped to text-to-speech and read aloud verbatim. Invoked by the service as /voice-code:role-convo.
+description: Install the conversation role on a session. Makes it the spoken layer of remote-workstreams — every reply is piped to text-to-speech and read aloud verbatim. Invoked by the service as /remote-workstreams:role-convo.
 disable-model-invocation: true
 ---
 

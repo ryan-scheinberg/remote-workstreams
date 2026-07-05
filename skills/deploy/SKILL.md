@@ -1,11 +1,11 @@
 ---
 name: deploy
-description: Deploy voice-code on this Mac — tmux + Tailscale checks, Deepgram/Cartesia keys into the macOS Keychain, pairing PIN, launchd install, tailscale serve, pairing QR, round-trip test. Use when the user wants to install, deploy, or repair a voice-code service.
+description: Deploy remote-workstreams on this Mac — tmux + Tailscale checks, Deepgram/Cartesia keys into the macOS Keychain, pairing PIN, launchd install, tailscale serve, pairing QR, round-trip test. Use when the user wants to install, deploy, or repair a remote-workstreams service.
 ---
 
-# Deploy voice-code
+# Deploy remote-workstreams
 
-You are deploying voice-code: a persistent launchd service on this Mac, reached from the
+You are deploying remote-workstreams: a persistent launchd service on this Mac, reached from the
 user's iPhone over their tailnet. The end state is a running service, secrets in the
 Keychain, HTTPS on the Mac's MagicDNS name, and a phone paired via QR code.
 
@@ -24,24 +24,24 @@ and are all idempotent — re-running any of them is safe.
 
 ## Step 0 — Assess
 
-Run `scripts/check.sh [REPO_DIR]` (default checks `~/voice-code`). Read the output and
+Run `scripts/check.sh [REPO_DIR]` (default checks `~/remote-workstreams`). Read the output and
 tell the user what is already in place and which steps remain. On a healthy install
 (everything `ok`/`present`/`configured`), say so and ask what they want to change.
 
 ## Step 1 — Preflight: macOS, uv, tmux, service repo
 
-- `os=unsupported` → stop; voice-code runs on macOS only (launchd, Keychain, CoreAudio).
+- `os=unsupported` → stop; remote-workstreams runs on macOS only (launchd, Keychain, CoreAudio).
 - `uv=missing` → have the user install uv (https://docs.astral.sh/uv/) and re-check.
-- `tmux=missing` → tmux is a hard prerequisite: every Claude Code session voice-code
+- `tmux=missing` → tmux is a hard prerequisite: every Claude Code session remote-workstreams
   drives lives in the `voice` tmux session. With the user's OK run `brew install tmux`
   (no Homebrew → https://brew.sh first), then re-run `check.sh` and confirm
   `tmux=`/`tmux_version=` report a binary.
-- `repo=missing` → the service needs a durable git clone of voice-code. Ask the user if
+- `repo=missing` → the service needs a durable git clone of remote-workstreams. Ask the user if
   they already have one (re-run `check.sh THEIR_PATH` to verify); otherwise, with their
-  OK, clone the canonical remote to `~/voice-code`:
+  OK, clone the canonical remote to `~/remote-workstreams`:
 
   ```
-  git clone https://github.com/ryan-scheinberg/voice-code ~/voice-code
+  git clone https://github.com/ryan-scheinberg/remote-workstreams ~/remote-workstreams
   ```
 
   Never run the service from the plugin's own marketplace clone — Claude Code replaces
@@ -72,7 +72,7 @@ printf '%s' 'PASTED_KEY' | scripts/store_secret.sh deepgram-api-key
 ```
 
 Same command shape for the other name. Keys go only to the login Keychain (service
-`voice-code`, matching `voicecode/keychain.py`) — never into files. There is no model
+`remote-workstreams`, matching `remote_workstreams/keychain.py`) — never into files. There is no model
 API key: all model use rides the Mac's Claude Code auth.
 
 ## Step 4 — Pairing PIN
@@ -82,7 +82,7 @@ not invalidate paired devices — it only gates future pairings.
 
 1. Ask the user to choose a 4-digit PIN (verify it matches `^[0-9]{4}$`).
 2. With their OK, store the **hash only** (the `--hash` flag runs the server's frozen
-   `voicecode.server.auth.hash_secret` — scrypt, salt `voice-code-v1`):
+   `remote_workstreams.server.auth.hash_secret` — scrypt, salt `voice-code-v1`):
 
 ```
 printf '%s' 'THE_PIN' | scripts/store_secret.sh pin-hash --hash "$REPO"
@@ -94,8 +94,8 @@ restart also clears the lockout.
 ## Step 5 — Install the launchd service
 
 Tell the user this will run `uv sync` in `$REPO`, write
-`~/Library/LaunchAgents/com.voicecode.server.plist` (rendered from
-`$REPO/deploy/com.voicecode.server.plist.template`), and `launchctl bootstrap` the
+`~/Library/LaunchAgents/com.remote-workstreams.server.plist` (rendered from
+`$REPO/deploy/com.remote-workstreams.server.plist.template`), and `launchctl bootstrap` the
 service. With their OK:
 
 ```
@@ -107,7 +107,7 @@ It fails fast if tmux is missing, then waits up to 30s for
 rendered plist, fix, and re-run the script.
 
 At boot the service does the session bootstrapping itself — nothing to do here, but
-verify it took: it writes `~/.voicecode/workstream-settings.json` (per-boot approval
+verify it took: it writes `~/.remote-workstreams/workstream-settings.json` (per-boot approval
 hook wiring), creates the `voice` tmux session if absent, and spawns or `--resume`s
 the persistent convo Claude Code session in window `voice:convo`. A healthy `check.sh`
 therefore also shows `tmux_session=voice` and `convo_window=alive`; if either is off
@@ -156,7 +156,7 @@ Run the audio round-trip test (synthesized speech in → transcript → reply au
 uses the live keys):
 
 ```
-(cd "$REPO" && uv run python -m voicecode.audio.roundtrip)
+(cd "$REPO" && uv run python -m remote_workstreams.audio.roundtrip)
 ```
 
 Report pass/fail. Finish with a summary: service state, tmux session state
@@ -165,8 +165,8 @@ status, round-trip result, and the rollback notes below.
 
 ## Rollback / uninstall
 
-- Stop the service: `launchctl bootout gui/$(id -u)/com.voicecode.server`
+- Stop the service: `launchctl bootout gui/$(id -u)/com.remote-workstreams.server`
 - Roll back code: `git -C "$REPO" checkout PREVIOUS_TAG`, then re-run
   `scripts/install_service.sh "$REPO"`
 - Stop serving: `"$TS" serve reset` (or the equivalent shown by `"$TS" serve --help`)
-- Remove secrets: `security delete-generic-password -s voice-code -a NAME` per entry
+- Remove secrets: `security delete-generic-password -s remote-workstreams -a NAME` per entry

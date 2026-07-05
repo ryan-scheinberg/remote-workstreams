@@ -7,8 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from voicecode.adapters import cartesia_tts
-from voicecode.adapters.cartesia_tts import DEFAULT_VOICE_ID, CartesiaTTS
+from remote_workstreams.adapters import cartesia_tts
+from remote_workstreams.adapters.cartesia_tts import DEFAULT_VOICE_ID, CartesiaTTS
 
 
 def chunk_event(pcm: bytes):

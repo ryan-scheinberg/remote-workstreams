@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>remote-workstreams</title>
+  <meta name="theme-color" content="#0a0c0f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="workstreams">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="app">
+  <header id="topbar">
+    <div id="conn" aria-live="polite">
+      <span id="conn-dot" class="offline"></span>
+      <span id="conn-label">offline</span>
+    </div>
+    <div id="state-chip" data-state="offline" aria-live="polite">
+      <span class="chip-dot"></span>
+      <span id="state-label">offline</span>
+    </div>
+    <button id="btn-lock" type="button" aria-label="Lock">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="5" y="10.5" width="14" height="9.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3M12 14.2v2.3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+    </button>
+  </header>
+
+  <section id="chat" aria-live="polite">
+    <p id="chat-empty">Say something. The conversation lands here.</p>
+  </section>
+
+  <div id="approvals" aria-live="assertive"></div>
+
+  <section id="workstreams" aria-label="Workstreams"></section>
+  <div id="ws-dots" aria-hidden="true"></div>
+
+  <div id="actionbar">
+    <button id="btn-plan" type="button">
+      <span class="spin" aria-hidden="true"></span><span class="label">+ Workstream</span>
+    </button>
+    <button id="btn-compact" type="button"><span class="label">Compact</span></button>
+    <button id="btn-clear" type="button"><span class="label">Clear</span></button>
+  </div>
+
+  <div id="composer">
+    <button id="btn-mute" type="button" aria-label="Mute" aria-pressed="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        <line class="mute-slash" x1="4.5" y1="4.5" x2="19.5" y2="19.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+      </svg>
+    </button>
+    <input id="composer-input" type="text"
+           autocomplete="off" autocapitalize="sentences" enterkeyhint="send">
+    <button id="composer-send" type="button" aria-label="Send">
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </div>
+</div>
+
+<div id="toast" hidden></div>
+
+<section id="screen-login" class="screen" hidden>
+  <p class="wordmark">remote<span>-</span>workstreams</p>
+  <div class="orb mini" data-state="listening" aria-hidden="true">
+    <div class="orb-halo"></div>
+    <div class="orb-ring ring-a"></div>
+    <div class="orb-core"></div>
+  </div>
+  <button id="login-unlock" type="button">Unlock with Face&nbsp;ID</button>
+  <button id="login-pair" type="button" class="screen-link">Pair this device</button>
+</section>
+
+<section id="screen-pairing" class="screen" hidden>
+  <form id="pair-form" autocomplete="off">
+    <p class="wordmark">remote<span>-</span>workstreams</p>
+    <h1>Pair this device</h1>
+    <p class="pair-copy">Enter the PIN chosen when the Mac was set up, then confirm with Face&nbsp;ID.</p>
+    <label for="pair-pin">pin</label>
+    <input id="pair-pin" type="text" class="pin" required inputmode="numeric" pattern="[0-9]{4}" maxlength="4" placeholder="&#x2022;&#x2022;&#x2022;&#x2022;">
+    <button id="pair-submit" type="submit">Continue with Face&nbsp;ID</button>
+    <button id="pair-back" type="button" class="screen-link">Back to unlock</button>
+    <p id="pair-error" hidden></p>
+  </form>
+</section>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

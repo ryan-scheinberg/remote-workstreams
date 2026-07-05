@@ -10,8 +10,8 @@ from types import SimpleNamespace
 
 from test_pipeline import FakeConvo, FakeTTS, build, chunk, wait_for
 
-from voicecode.audio.echo import EchoGuard
-from voicecode.audio.state import PipelineState
+from remote_workstreams.audio.echo import EchoGuard
+from remote_workstreams.audio.state import PipelineState
 
 ONE_SECOND = 48000  # bytes of 24 kHz s16le mono
 

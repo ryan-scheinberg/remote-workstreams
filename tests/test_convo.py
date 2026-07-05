@@ -7,9 +7,9 @@ import asyncio
 import json
 from pathlib import Path
 
-from voicecode.convo import ConvoBridge
-from voicecode.substrate import CCSession, SessionSpec
-from voicecode.transcript import AssistantText, Entry, ToolActivity, TurnEnd, UserText
+from remote_workstreams.convo import ConvoBridge
+from remote_workstreams.substrate import CCSession, SessionSpec
+from remote_workstreams.transcript import AssistantText, Entry, ToolActivity, TurnEnd, UserText
 
 TS = "2026-07-03T10:00:00.000Z"
 

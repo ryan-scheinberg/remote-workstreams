@@ -7,10 +7,10 @@ import asyncio
 import json
 import logging
 
-from voicecode.adapters.stt import STTAdapter, TranscriptChunk
-from voicecode.adapters.tts import TTSAdapter
-from voicecode.audio.pipeline import AudioPipeline
-from voicecode.audio.state import PipelineState
+from remote_workstreams.adapters.stt import STTAdapter, TranscriptChunk
+from remote_workstreams.adapters.tts import TTSAdapter
+from remote_workstreams.audio.pipeline import AudioPipeline
+from remote_workstreams.audio.state import PipelineState
 
 LISTENING = PipelineState.LISTENING
 THINKING = PipelineState.THINKING
@@ -319,7 +319,7 @@ async def test_close_cancels_inflight_turn() -> None:
 
 
 async def test_latency_logged_per_turn(caplog) -> None:
-    caplog.set_level(logging.INFO, logger="voicecode.latency")
+    caplog.set_level(logging.INFO, logger="remote_workstreams.latency")
     pipeline, stt, _, _, sink = build()
     task = asyncio.create_task(pipeline.run())
 
@@ -328,7 +328,7 @@ async def test_latency_logged_per_turn(caplog) -> None:
     await pipeline.close()
     await asyncio.wait_for(task, 1)
 
-    records = [r for r in caplog.records if r.name == "voicecode.latency"]
+    records = [r for r in caplog.records if r.name == "remote_workstreams.latency"]
     assert len(records) == 1
     data = json.loads(records[0].message)
     assert data["kind"] == "voice"
@@ -341,7 +341,7 @@ async def test_latency_logged_per_turn(caplog) -> None:
 
 
 async def test_interrupted_turn_logged(caplog) -> None:
-    caplog.set_level(logging.INFO, logger="voicecode.latency")
+    caplog.set_level(logging.INFO, logger="remote_workstreams.latency")
     tts = FakeTTS(hold_first=True)
     pipeline, stt, _, _, sink = build(convo=FakeConvo(replies=[["Held."]]), tts=tts)
     task = asyncio.create_task(pipeline.run())
@@ -351,7 +351,7 @@ async def test_interrupted_turn_logged(caplog) -> None:
     stt.push(chunk("stop"))
     await wait_for(lambda: INTERRUPTED in sink.states)
 
-    records = [r for r in caplog.records if r.name == "voicecode.latency"]
+    records = [r for r in caplog.records if r.name == "remote_workstreams.latency"]
     assert len(records) == 1
     assert json.loads(records[0].message)["interrupted"] is True
 

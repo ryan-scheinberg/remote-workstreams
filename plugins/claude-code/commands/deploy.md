@@ -1,5 +1,5 @@
 ---
-description: Deploy voice-code on this Mac — tmux + Tailscale, Deepgram/Cartesia keys into the Keychain, pairing PIN, launchd service, tailscale serve, pairing QR, round-trip test.
+description: Deploy remote-workstreams on this Mac — tmux + Tailscale, Deepgram/Cartesia keys into the Keychain, pairing PIN, launchd service, tailscale serve, pairing QR, round-trip test.
 ---
 
 Read ${CLAUDE_PLUGIN_ROOT}/skills/deploy/SKILL.md and follow it step by step. Its helper

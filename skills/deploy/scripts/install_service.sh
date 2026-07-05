@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Installs (or reinstalls) the voice-code launchd service and waits for /healthz.
+# Installs (or reinstalls) the remote-workstreams launchd service and waits for /healthz.
 # Idempotent: re-running syncs deps, rewrites the plist, and restarts the service.
 #
 # Usage: install_service.sh REPO_DIR
 set -euo pipefail
 
 REPO="$(cd "${1:?usage: install_service.sh REPO_DIR}" && pwd)"
-LABEL="com.voicecode.server"
+LABEL="com.remote-workstreams.server"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 TEMPLATE="$REPO/deploy/$LABEL.plist.template"
-PORT="${VOICECODE_PORT:-8400}"
+PORT="${REMOTE_WORKSTREAMS_PORT:-8400}"
 
 command -v uv >/dev/null 2>&1 || { echo "error=uv-missing hint=https://docs.astral.sh/uv/"; exit 1; }
 UV="$(command -v uv)"
@@ -20,7 +20,7 @@ command -v tmux >/dev/null 2>&1 || { echo "error=tmux-missing hint=brew install 
 (cd "$REPO" && uv sync)
 echo "deps=synced"
 
-mkdir -p "$HOME/Library/LaunchAgents" "$HOME/.voicecode/logs"  # launchd won't create log dirs
+mkdir -p "$HOME/Library/LaunchAgents" "$HOME/.remote-workstreams/logs"  # launchd won't create log dirs
 sed -e "s|__UV__|$UV|g" -e "s|__REPO__|$REPO|g" -e "s|__HOME__|$HOME|g" -e "s|__PORT__|$PORT|g" "$TEMPLATE" > "$PLIST"
 echo "plist=$PLIST"
 

@@ -1,7 +1,7 @@
 import pydantic
 import pytest
 
-from voicecode import protocol
+from remote_workstreams import protocol
 
 CLIENT_MESSAGES = [
     protocol.Hello(credential="cred-1"),

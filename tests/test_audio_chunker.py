@@ -1,4 +1,4 @@
-from voicecode.audio.chunker import SentenceChunker
+from remote_workstreams.audio.chunker import SentenceChunker
 
 
 def test_first_chunk_at_first_sentence_boundary():

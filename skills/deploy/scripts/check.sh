@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Reports voice-code deploy state as key=value lines. Read-only: changes nothing,
+# Reports remote-workstreams deploy state as key=value lines. Read-only: changes nothing,
 # always exits 0. Run it before deploying (to pick the needed steps) and after
 # any step (to verify it took).
 #
-# Usage: check.sh [REPO_DIR]   (default: ~/voice-code)
+# Usage: check.sh [REPO_DIR]   (default: ~/remote-workstreams)
 set -uo pipefail
 
-REPO="${1:-$HOME/voice-code}"
-PORT="${VOICECODE_PORT:-8400}"
+REPO="${1:-$HOME/remote-workstreams}"
+PORT="${REMOTE_WORKSTREAMS_PORT:-8400}"
 
 # --- OS ---
 if [ "$(uname -s)" = "Darwin" ]; then
@@ -31,8 +31,8 @@ else
   echo "tmux=missing"
 fi
 
-# --- service repo (a git clone of voice-code, NOT the plugin marketplace copy) ---
-if [ -f "$REPO/pyproject.toml" ] && grep -q '^name = "voice-code"' "$REPO/pyproject.toml"; then
+# --- service repo (a git clone of remote-workstreams, NOT the plugin marketplace copy) ---
+if [ -f "$REPO/pyproject.toml" ] && grep -q '^name = "remote-workstreams"' "$REPO/pyproject.toml"; then
   echo "repo=$REPO"
 else
   echo "repo=missing checked=$REPO"
@@ -68,7 +68,7 @@ fi
 
 # --- Keychain secrets (presence only; values are never printed) ---
 for name in deepgram-api-key cartesia-api-key pin-hash; do
-  if security find-generic-password -s voice-code -a "$name" >/dev/null 2>&1; then
+  if security find-generic-password -s remote-workstreams -a "$name" >/dev/null 2>&1; then
     echo "secret_${name}=present"
   else
     echo "secret_${name}=missing"
@@ -76,9 +76,9 @@ for name in deepgram-api-key cartesia-api-key pin-hash; do
 done
 
 # --- launchd service ---
-PLIST="$HOME/Library/LaunchAgents/com.voicecode.server.plist"
+PLIST="$HOME/Library/LaunchAgents/com.remote-workstreams.server.plist"
 if [ -f "$PLIST" ]; then echo "plist=$PLIST"; else echo "plist=missing"; fi
-if launchctl print "gui/$(id -u)/com.voicecode.server" >/dev/null 2>&1; then
+if launchctl print "gui/$(id -u)/com.remote-workstreams.server" >/dev/null 2>&1; then
   echo "service=loaded"
 else
   echo "service=not-loaded"

@@ -1,4 +1,4 @@
-# voice-code — agent orientation
+# remote-workstreams — agent orientation
 
 Voice and phone front-end over **real, interactive Claude Code sessions**: every model interaction is a CC session living as a window in the `voice` tmux session on the Mac; the iPhone is a thin PWA over Tailscale; any terminal can `tmux attach` and drive the same sessions. The README carries the design; this file carries what the next agent working on the code needs.
 
@@ -7,27 +7,27 @@ Voice and phone front-end over **real, interactive Claude Code sessions**: every
 - v5 built 2026-07-03, replacing the v4 pass the same week. All tests green, ruff clean.
 - **Device-tested 2026-07-05** end to end: launchd service, `tailscale serve` (tailnet-only), a paired iPhone, real voice turns over live Deepgram+Cartesia, roundtrip passed. First device testing produced two fixes now in main: media-element TTS sink (iOS ringer switch muted Web Audio) and the server-side EchoGuard (iOS echoCancellation let the agent hear itself).
 - Convo runs **sonnet/low for now** (token thrift — `CONVO_MODEL` in bootstrap.py); design intent is fable low per the session roster.
-- The gated real-session test (`tests/test_live_convo.py`, skipped unless `VOICECODE_LIVE=1`) was run once on 2026-07-03 and **passed** (haiku in tmux session `voice-qa`).
-- Home: `github.com/ryan-scheinberg/voice-code`, GPLv3.
+- The gated real-session test (`tests/test_live_convo.py`, skipped unless `REMOTE_WORKSTREAMS_LIVE=1`) was run once on 2026-07-03 and **passed** (haiku in tmux session `voice-qa`).
+- Home: `github.com/ryan-scheinberg/remote-workstreams`, GPLv3.
 
 ## Commands
 
 - `uv sync` — install (Python 3.13 via uv; 3.14 is too new for the audio ecosystem)
 - `uv run pytest` — full suite (pytest-asyncio auto mode: plain `async def` tests work)
 - `uvx ruff check .` — lint; keep it clean
-- `uv run python -m voicecode.server` — the service (needs tmux + provider keys)
-- `uv run python -m voicecode.ambient` — Mac mic+speaker mode, no phone (same needs)
+- `uv run python -m remote_workstreams.server` — the service (needs tmux + provider keys)
+- `uv run python -m remote_workstreams.ambient` — Mac mic+speaker mode, no phone (same needs)
 
 ## Layout
 
 ```
-voicecode/
+remote_workstreams/
   substrate.py     LOAD-BEARING  the ONLY tmux-aware module: spawn/inject/kill CC sessions
   transcript.py    LOAD-BEARING  the ONLY module that parses CC transcript JSONL
   convo.py                       ConvoBridge: voice/UI face of the voice:convo session
   bootstrap.py                   ensure_convo: reuse alive window / --resume dead / fresh spawn
   protocol.py      LOAD-BEARING  WebSocket messages client⇄server + audio formats
-  config.py                      host/port/data_dir; VOICECODE_* env overrides
+  config.py                      host/port/data_dir; REMOTE_WORKSTREAMS_* env overrides
   keychain.py                    secrets via macOS Keychain, env vars win in dev/tests
   adapters/                      stt.py + tts.py ABCs; deepgram_stt.py, cartesia_tts.py
   audio/                         state.py machine, pipeline.py (barge-in, latency), chunker.py
@@ -48,8 +48,8 @@ tests/                           pytest; mirror module names; server_fakes.py = 
 
 ## Conventions
 
-- Tests mock at the tmux/transcript boundary: `FakeTmux`/`FakeSubstrate` + fixture JSONL transcript files. **No default test ever launches a real Claude Code session or touches a real tmux server** — the one exception, `tests/test_live_convo.py`, is skipped unless `VOICECODE_LIVE=1` and must only be run deliberately. Provider SDKs are mocked at the SDK boundary; read the installed package source in `.venv` for the real API surface — versions drift.
-- Composition roots (`voicecode/server/__main__.py`, `voicecode/ambient.py`) are the only modules that import concrete Tmux/adapters; everything else takes dependencies as constructor args so tests inject fakes.
+- Tests mock at the tmux/transcript boundary: `FakeTmux`/`FakeSubstrate` + fixture JSONL transcript files. **No default test ever launches a real Claude Code session or touches a real tmux server** — the one exception, `tests/test_live_convo.py`, is skipped unless `REMOTE_WORKSTREAMS_LIVE=1` and must only be run deliberately. Provider SDKs are mocked at the SDK boundary; read the installed package source in `.venv` for the real API surface — versions drift.
+- Composition roots (`remote_workstreams/server/__main__.py`, `remote_workstreams/ambient.py`) are the only modules that import concrete Tmux/adapters; everything else takes dependencies as constructor args so tests inject fakes.
 - Secrets only via `keychain.get_secret("deepgram-api-key" | "cartesia-api-key")` — env vars (`DEEPGRAM_API_KEY`, …) win, which is also how tests inject fakes. The pairing PIN is stored as a scrypt hash: `pin-hash` (a stale `pairing-token-hash` entry may linger in the Keychain from the pre-passkey design — nothing reads it; leave it). No model API key exists anywhere.
 
 ## Decisions you don't get to reopen without the maintainer
@@ -62,28 +62,28 @@ tests/                           pytest; mirror module names; server_fakes.py = 
 
 ## How the assembled system behaves (facts the next agent needs)
 
-**Spawning** — `Substrate.spawn` types `command claude --session-id <minted-uuid> --model … --effort … -n <name> [--settings f] [--plugin-dir d] [initial-prompt]` into a fresh window (`command` defeats shell aliases/functions). Minting the UUID makes the transcript path known before the session exists. Continuity: `bootstrap.ensure_convo` reuses an alive `voice:convo` window, respawns a dead one with `--resume <stored-id>`, or fresh-spawns with `/voice-code:role-convo`. Multiline inject = `load-buffer` + `paste-buffer -p`, 0.5s pause, `Enter`. Slash commands are TYPED (`send-keys -l`), never pasted, so the TUI's command mode triggers.
+**Spawning** — `Substrate.spawn` types `command claude --session-id <minted-uuid> --model … --effort … -n <name> [--settings f] [--plugin-dir d] [initial-prompt]` into a fresh window (`command` defeats shell aliases/functions). Minting the UUID makes the transcript path known before the session exists. Continuity: `bootstrap.ensure_convo` reuses an alive `voice:convo` window, respawns a dead one with `--resume <stored-id>`, or fresh-spawns with `/remote-workstreams:role-convo`. Multiline inject = `load-buffer` + `paste-buffer -p`, 0.5s pause, `Enter`. Slash commands are TYPED (`send-keys -l`), never pasted, so the TUI's command mode triggers.
 
 **ConvoBridge** — `run()` polls the transcript tail (0.25s) and fans every entry to subscribers. `turn(text)` sends the text, then streams TTS-ready sentence chunks from complete `AssistantText` blocks until the transcript's `system/turn_duration` line (`TurnEnd`) arrives; one turn active at a time — a new turn detaches the superseded stream. Input sent mid-turn QUEUES in the session (Milestone-0), so a superseded/barged turn's remaining blocks and TurnEnd land first — the new turn's stream skips exactly that many unfinished turns' entries (they still reach chat via subscribers) and speaks only its own reply. `/compact` appends to the SAME transcript file; tailing continues unbroken.
 
 **Chat sourcing rule** — the CC transcript is the source of truth: assistant text, tool activity, and final user text all render from transcript entries via the fan-out. The audio pipeline's sink carries ONLY user STT interims (`final=False`), state, TTS audio, and speech_end. Typed `text_input` is not locally echoed — it comes back as a transcript user line.
 
-**Approvals** — workstream sessions get a per-boot PreToolUse hook (settings file written by `__main__.py` at boot with a fresh relay token): `hooks/ask_phone.py --gate-bash` relays only Bash commands matching its short destructive list; everything else exits silently and instantly. Relay path: hook JSON on stdin → POST `/approvals` (X-Voicecode-Token) → `ApprovalRequest` card on the phone → WS `Approval` message resolves it → hook prints an allow/deny permission decision. Timeout (60s server / 90s client), non-200, or unreachable service → the hook prints nothing and Claude Code's native permission behavior takes over — that's built-in hook semantics, not our fallback code. Any user hook (e.g. a personal bash gate) can exec the same client.
+**Approvals** — workstream sessions get a per-boot PreToolUse hook (settings file written by `__main__.py` at boot with a fresh relay token): `hooks/ask_phone.py --gate-bash` relays only Bash commands matching its short destructive list; everything else exits silently and instantly. Relay path: hook JSON on stdin → POST `/approvals` (X-Workstreams-Token) → `ApprovalRequest` card on the phone → WS `Approval` message resolves it → hook prints an allow/deny permission decision. Timeout (60s server / 90s client), non-200, or unreachable service → the hook prints nothing and Claude Code's native permission behavior takes over — that's built-in hook semantics, not our fallback code. Any user hook (e.g. a personal bash gate) can exec the same client.
 
-**Workstreams** — `new_workstream` (one message; the phone button is arm→confirm): marker ← convo transcript line count, spawn planner with `/voice-code:role-stint-plan convo=… since_line=… output=…`, poll for the output file (2s interval, 300s budget), kill the planner, then launch IMMEDIATELY — the plan is trusted, never shown for review. Plan file's first line is `Stint: <title>` (hard contract with role-stint-plan; the title is all the user ever sees) → window `ws-<slug>`, spawned with `/role-root` + the workstream settings file, full plan text pasted only after `_await_ready` sees the role greeting in the transcript. `send_to_workstream`: injector distills convo-since-marker into a directive file, directive pasted into the workstream, marker advances. `check_in`: a directive through `pipeline.text()` so the convo session itself reads the workstream transcript tail and answers out loud. `end_workstream`: kills the window and drops the row/card; the CC transcript survives. Cards are name/title/status only (the phone renders a one-card swipe pager) and push every 5s while any workstream exists. `clear_convo`: `bootstrap.fresh_convo` kills the convo window and spawns a brand-new session (`/voice-code:role-convo`, new id, marker → 0), `bridge.reset()` swaps the transcript tail, the manager's `convo_transcript` is re-pointed, and `ConvoCleared` wipes the phone's chat.
+**Workstreams** — `new_workstream` (one message; the phone button is arm→confirm): marker ← convo transcript line count, spawn planner with `/remote-workstreams:role-stint-plan convo=… since_line=… output=…`, poll for the output file (2s interval, 300s budget), kill the planner, then launch IMMEDIATELY — the plan is trusted, never shown for review. Plan file's first line is `Stint: <title>` (hard contract with role-stint-plan; the title is all the user ever sees) → window `ws-<slug>`, spawned with `/role-root` + the workstream settings file, full plan text pasted only after `_await_ready` sees the role greeting in the transcript. `send_to_workstream`: injector distills convo-since-marker into a directive file, directive pasted into the workstream, marker advances. `check_in`: a directive through `pipeline.text()` so the convo session itself reads the workstream transcript tail and answers out loud. `end_workstream`: kills the window and drops the row/card; the CC transcript survives. Cards are name/title/status only (the phone renders a one-card swipe pager) and push every 5s while any workstream exists. `clear_convo`: `bootstrap.fresh_convo` kills the convo window and spawns a brand-new session (`/remote-workstreams:role-convo`, new id, marker → 0), `bridge.reset()` swaps the transcript tail, the manager's `convo_transcript` is re-pointed, and `ConvoCleared` wipes the phone's chat.
 
 **Auth** — pairing (once per device): 4-digit PIN (`POST /api/pair/start`, checked against the Keychain `pin-hash`; 5 misses lock pairing for 10 minutes, in-memory) → WebAuthn registration (Face ID) → `POST /api/pair/finish` stores the passkey (credential id, public key, sign count) in SQLite and returns a session token. Login (every app open): `POST /api/login/start` (discoverable-passkey assertion options) → Face ID → `POST /api/login/finish` verifies against the stored public key and mints a session token. Session tokens are random, held ONLY in an in-memory dict on `LoginManager` (24h TTL) and in a page variable on the phone — never in localStorage; a server restart or the PWA Lock button (also auto-lock after 120s backgrounded) logs everyone out, and the next open is one Face ID tap. WS `hello{credential}` carries the session token and validates only against live sessions. Upgrading across the auth rework drops the old credentials table — previously paired phones must re-pair (PIN + Face ID) once.
 
 **Server** — one live socket globally: a new connection takes over; the old socket gets Error + close. Attach replays chat history from the transcript, then live entries stream. Store (SQLite, WAL) holds only: device credentials, the single convo CC session id, workstream rows (name, cc_session_id, window, title, plan_path, status), and the plan/inject since-marker — conversation content is never stored, and boot drops the legacy `sessions`/`transcript` tables. `create_app(..., web_dir=)` lets tests serve a temp PWA dir. `/healthz` unchanged.
 
-**Audio** — pipeline states `listening/thinking/speaking/interrupted`; barge-in (any non-empty STT chunk while SPEAKING) kills TTS instantly and abandons the sentence stream, but the session keeps writing — the full reply still lands in chat from the transcript. User speech endpointing while THINKING supersedes the in-flight turn. Latency instrumentation: logger `voicecode.latency`, one JSON line per turn, key metric `endpoint_to_first_audio_ms` — measure, don't promise.
+**Audio** — pipeline states `listening/thinking/speaking/interrupted`; barge-in (any non-empty STT chunk while SPEAKING) kills TTS instantly and abandons the sentence stream, but the session keeps writing — the full reply still lands in chat from the transcript. User speech endpointing while THINKING supersedes the in-flight turn. Latency instrumentation: logger `remote_workstreams.latency`, one JSON line per turn, key metric `endpoint_to_first_audio_ms` — measure, don't promise.
 
 ## Gotchas already known
 
 - A user's shell may define a `claude()` function or alias that rewrites a bare `claude` invocation — the substrate must always spawn `command claude` with explicit args (it does; keep it that way).
 - Transcript JSONL is an undocumented internal format, pinned at CC 2.1.201 in `transcript.py` (one line per content block; meta/sidechain lines skipped; tool results come back as `user` lines). Expect breakage on Claude Code updates — smoke-test parsing after any CC update.
 - Text blocks appear in the transcript only when complete — no streaming partials, so first audio waits on the first finished block. role-convo's short spoken turns keep this small; measure before mitigating.
-- The default tests never talk to tmux or Claude Code; only `VOICECODE_LIVE=1 uv run pytest tests/test_live_convo.py` (never run automatically) proves the live path.
+- The default tests never talk to tmux or Claude Code; only `REMOTE_WORKSTREAMS_LIVE=1 uv run pytest tests/test_live_convo.py` (never run automatically) proves the live path.
 - Deepgram v7: `client.listen.v1.connect` is the nova-3 socket; `/v2` is Flux-only (no interim_results/endpointing); `utterance_end_ms` minimum is 1000; idle sockets drop ~10s → keepalive every 5s (e.g. while muted).
 - Cartesia 3.3.0: SSE chunk events need the `.audio` property (base64-decoded); `AsyncCartesia` does NOT read the key from env — pass it explicitly; `DEFAULT_VOICE_ID` is Cartesia's stock "Skylar"; override via the `voice_id` constructor arg.
 - `qrcode.make()` returns an image with no `print_ascii`; build a `qrcode.QRCode()` object instead (the deploy skill's pairing step depends on this).

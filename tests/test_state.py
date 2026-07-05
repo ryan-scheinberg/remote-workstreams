@@ -1,6 +1,6 @@
 import pytest
 
-from voicecode.audio.state import IllegalTransition, PipelineState, StateMachine
+from remote_workstreams.audio.state import IllegalTransition, PipelineState, StateMachine
 
 
 def test_full_turn_cycle():

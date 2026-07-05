@@ -4,7 +4,7 @@ cannot: spawn -> paste a turn -> sentences stream from the minted transcript pat
 
 Run manually (spawns a real session on your Claude Code account):
 
-    VOICECODE_LIVE=1 uv run pytest tests/test_live_convo.py
+    REMOTE_WORKSTREAMS_LIVE=1 uv run pytest tests/test_live_convo.py
 
 Uses tmux session "voice-qa" so it never collides with the real "voice" session;
 the window and the tmux session are torn down in finally.
@@ -19,12 +19,12 @@ from pathlib import Path
 
 import pytest
 
-from voicecode.convo import ConvoBridge
-from voicecode.substrate import SessionSpec, Substrate, Tmux
+from remote_workstreams.convo import ConvoBridge
+from remote_workstreams.substrate import SessionSpec, Substrate, Tmux
 
 pytestmark = pytest.mark.skipif(
-    os.environ.get("VOICECODE_LIVE") != "1",
-    reason="live Claude Code session; set VOICECODE_LIVE=1 to run",
+    os.environ.get("REMOTE_WORKSTREAMS_LIVE") != "1",
+    reason="live Claude Code session; set REMOTE_WORKSTREAMS_LIVE=1 to run",
 )
 
 TMUX_SESSION = "voice-qa"

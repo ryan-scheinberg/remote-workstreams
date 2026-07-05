@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Rendered by the deploy plugin: __UV__ = absolute path to uv,
+     __REPO__ = absolute path to the remote-workstreams checkout, __HOME__ = user home,
+     __PORT__ = service port (must match what install_service.sh health-checks). -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.remote-workstreams.server</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__UV__</string>
+        <string>run</string>
+        <string>--project</string>
+        <string>__REPO__</string>
+        <string>python</string>
+        <string>-m</string>
+        <string>remote_workstreams.server</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>__REPO__</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>__HOME__/.remote-workstreams/logs/server.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/.remote-workstreams/logs/server.err.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>__HOME__</string>
+        <key>REMOTE_WORKSTREAMS_PORT</key>
+        <string>__PORT__</string>
+        <!-- launchd's default PATH misses Homebrew; the service spawns tmux by name. -->
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

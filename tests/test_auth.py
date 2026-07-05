@@ -3,8 +3,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from voicecode.server import auth
-from voicecode.server.auth import (
+from remote_workstreams.server import auth
+from remote_workstreams.server.auth import (
     LOCKOUT_ATTEMPTS,
     LoginError,
     LoginManager,
@@ -12,7 +12,7 @@ from voicecode.server.auth import (
     PairingManager,
     hash_secret,
 )
-from voicecode.server.store import Store
+from remote_workstreams.server.store import Store
 
 RP_ID = "mac.tail1234.ts.net"
 ORIGIN = f"https://{RP_ID}"
@@ -63,7 +63,7 @@ def test_start_rejects_bad_pin(store, pairing_env):
 
 
 def test_start_rejects_when_pairing_not_configured(store, monkeypatch):
-    monkeypatch.setattr("voicecode.keychain.get_secret", lambda name: None)
+    monkeypatch.setattr("remote_workstreams.keychain.get_secret", lambda name: None)
     with pytest.raises(PairingError):
         PairingManager(store).start("1234", RP_ID)
 
@@ -97,7 +97,7 @@ def test_start_returns_creation_options_for_request_host(store, pairing_env):
     manager = PairingManager(store)
     pairing_id, options = manager.start("1234", RP_ID)
     assert pairing_id
-    assert options["rp"] == {"id": RP_ID, "name": "voice-code"}
+    assert options["rp"] == {"id": RP_ID, "name": "remote-workstreams"}
     assert isinstance(options["challenge"], str) and options["challenge"]
     assert options["pubKeyCredParams"]
     assert options["authenticatorSelection"]["authenticatorAttachment"] == "platform"

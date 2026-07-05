@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from array import array
 
-from voicecode.audio import roundtrip
+from remote_workstreams.audio import roundtrip
 
 
 def test_resample_downsamples_24k_to_16k() -> None:

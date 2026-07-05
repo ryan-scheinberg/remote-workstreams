@@ -1,6 +1,6 @@
 ---
 name: role-stint-plan
-description: Install the stint-planner role on an ephemeral session. Distills the latest arc of the voice conversation into a stint plan for an execution session. Invoked by the service as /voice-code:role-stint-plan.
+description: Install the stint-planner role on an ephemeral session. Distills the latest arc of the voice conversation into a stint plan for an execution session. Invoked by the service as /remote-workstreams:role-stint-plan.
 disable-model-invocation: true
 ---
 

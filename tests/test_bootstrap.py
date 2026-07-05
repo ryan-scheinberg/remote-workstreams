@@ -3,8 +3,8 @@ from pathlib import Path
 import pytest
 
 from server_fakes import FakeSubstrate
-from voicecode.bootstrap import ensure_convo, fresh_convo
-from voicecode.server.store import Store
+from remote_workstreams.bootstrap import ensure_convo, fresh_convo
+from remote_workstreams.server.store import Store
 
 PLUGIN_DIR = Path("/plugins/claude-code")
 
@@ -24,7 +24,7 @@ async def test_fresh_spawn_mints_id_and_stores_it(rig):
     assert (spec.name, spec.model, spec.effort) == ("convo", "sonnet", "low")
     assert spec.display_name == "convo"
     assert spec.plugin_dir == PLUGIN_DIR
-    assert spec.initial_prompt == "/voice-code:role-convo"
+    assert spec.initial_prompt == "/remote-workstreams:role-convo"
     assert spec.resume is False
     assert store.get_convo_session() == session.session_id
     assert session.window == "voice:convo"
@@ -63,7 +63,7 @@ async def test_fresh_convo_replaces_the_live_session(rig):
     assert substrate.killed == [first.window]
     assert session.session_id != first.session_id  # brand-new, not resumed
     assert session.spec.resume is False
-    assert session.spec.initial_prompt == "/voice-code:role-convo"
+    assert session.spec.initial_prompt == "/remote-workstreams:role-convo"
     assert store.get_convo_session() == session.session_id
     assert store.get_marker() == 0  # the old transcript's line counts are meaningless
 

@@ -1,6 +1,6 @@
 ---
 name: role-inject
-description: Install the injector role on an ephemeral session. Distills the latest conversation delta into a self-contained directive for a running workstream. Invoked by the service as /voice-code:role-inject.
+description: Install the injector role on an ephemeral session. Distills the latest conversation delta into a self-contained directive for a running workstream. Invoked by the service as /remote-workstreams:role-inject.
 disable-model-invocation: true
 ---
 

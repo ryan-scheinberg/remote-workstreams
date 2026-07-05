@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from voicecode.substrate import SessionSpec, Substrate, Tmux, slug
+from remote_workstreams.substrate import SessionSpec, Substrate, Tmux, slug
 
 HOME = Path("/Users/alice")
 
@@ -74,8 +74,8 @@ async def test_spawn_full_options():
         effort="xhigh",
         display_name="Wire the auth flow",
         settings_file=Path("/tmp/ws-settings.json"),
-        plugin_dir=Path("/Users/alice/plugins/voice-code"),
-        initial_prompt="/voice-code:role-root plan in stint-3.md",
+        plugin_dir=Path("/Users/alice/plugins/remote-workstreams"),
+        initial_prompt="/remote-workstreams:role-root plan in stint-3.md",
         remote_control=True,
     )
     session = await sub.spawn(spec)
@@ -89,8 +89,8 @@ async def test_spawn_full_options():
         f"command claude --session-id {session.session_id} --model fable --effort xhigh"
         " -n 'Wire the auth flow' --remote-control 'Wire the auth flow'"
         " --settings /tmp/ws-settings.json"
-        " --plugin-dir /Users/alice/plugins/voice-code"
-        " '/voice-code:role-root plan in stint-3.md'"
+        " --plugin-dir /Users/alice/plugins/remote-workstreams"
+        " '/remote-workstreams:role-root plan in stint-3.md'"
     )
     assert fake.calls == [
         ("ensure_session", "voice"),
