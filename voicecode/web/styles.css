@@ -17,6 +17,7 @@
   --amber: #f0b45c;
   --ember: #ff7a59;
   --danger: #ff5d6e;
+  --blue: #6aa9ff;
   --gray: #5c6572;
 
   --accent: var(--gray);
@@ -87,7 +88,7 @@ button {
   max-width: 760px;
   margin: 0 auto;
   display: grid;
-  grid-template-rows: auto 1fr auto auto auto auto;
+  grid-template-rows: auto 1fr auto auto auto auto auto;
 }
 
 #topbar {
@@ -323,20 +324,39 @@ button {
 }
 .btn-approve:active { background: color-mix(in srgb, var(--teal) 82%, black); }
 
-/* ---------- workstream cards ---------- */
+/* ---------- workstream pager: one card, swipe sideways for the rest ---------- */
 
 #workstreams {
-  max-height: 30dvh;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
-  padding: 4px 16px 2px;
-  display: grid;
+  display: flex;
   gap: 10px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  padding: 4px 16px 2px;
 }
+#workstreams::-webkit-scrollbar { display: none; }
 #workstreams:empty { display: none; }
 
+#ws-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  padding-top: 6px;
+}
+#ws-dots:empty { display: none; }
+#ws-dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+#ws-dots span.active { background: var(--teal); }
+
 .ws {
+  flex: 0 0 100%;
+  scroll-snap-align: center;
   padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -366,7 +386,7 @@ button {
   color: var(--faint);
   border-radius: 8px;
 }
-.ws-end.armed { color: var(--red, #e5484d); }
+.ws-end.armed { color: var(--danger); }
 
 .ws-title {
   flex: 1;
@@ -397,10 +417,11 @@ button {
 
 /* ---------- action bar ---------- */
 
-/* one primary action (+ Workstream), one quiet utility (Compact) */
+/* one primary action (+ Workstream), two quiet utilities (Compact, Clear);
+   each arms with its own color, the second tap fires */
 #actionbar {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 10px;
   padding: 10px 16px 0;
 }
@@ -424,7 +445,7 @@ button {
   border-color: color-mix(in srgb, var(--teal) 35%, var(--line));
 }
 
-#btn-compact { color: var(--faint); }
+#btn-compact, #btn-clear { color: var(--faint); }
 
 #btn-plan .spin {
   display: none;
@@ -441,9 +462,17 @@ button {
 }
 #btn-plan.pending .spin { display: inline-block; }
 
+#btn-plan.armed {
+  color: var(--blue);
+  border-color: color-mix(in srgb, var(--blue) 50%, transparent);
+}
 #btn-compact.armed {
   color: var(--amber);
   border-color: color-mix(in srgb, var(--amber) 45%, transparent);
+}
+#btn-clear.armed {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 50%, transparent);
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -503,132 +532,6 @@ button {
   place-items: center;
 }
 #composer-send:active { background: var(--elev); }
-
-/* ---------- sheets ---------- */
-
-#backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 8;
-  background: rgba(4, 6, 8, 0.55);
-  -webkit-backdrop-filter: blur(3px);
-  backdrop-filter: blur(3px);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.3s ease;
-}
-#backdrop.open { opacity: 1; pointer-events: auto; }
-
-.sheet {
-  position: fixed;
-  z-index: 9;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  max-width: 760px;
-  margin: 0 auto;
-  max-height: 78dvh;
-  display: flex;
-  flex-direction: column;
-  background: var(--elev);
-  border: 1px solid var(--line);
-  border-bottom: 0;
-  border-radius: 22px 22px 0 0;
-  transform: translateY(103%);
-  transition: transform 0.34s cubic-bezier(0.32, 0.72, 0.28, 1);
-}
-.sheet.open { transform: translateY(0); }
-
-.sheet-grip {
-  width: 38px;
-  height: 4px;
-  margin: 10px auto 2px;
-  border-radius: 2px;
-  background: var(--line);
-  flex: none;
-}
-
-.sheet header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 20px 12px;
-  border-bottom: 1px solid var(--line);
-  flex: none;
-}
-.sheet h2 {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.34em;
-  text-transform: uppercase;
-  color: var(--dim);
-}
-.sheet-close {
-  width: 34px;
-  height: 34px;
-  margin-right: -8px;
-  border-radius: 12px;
-  color: var(--dim);
-  font-size: 13px;
-}
-.sheet-close:active { background: var(--elev-2); }
-
-.sheet-body {
-  min-height: 120px;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
-  padding: 16px 20px 20px;
-}
-
-/* stint plan sheet */
-
-#plan-title {
-  font-family: var(--serif);
-  font-size: 20px;
-  font-weight: 600;
-  line-height: 1.3;
-  margin-bottom: 12px;
-  user-select: text;
-  -webkit-user-select: text;
-}
-
-#plan-text {
-  font-size: 12.5px;
-  line-height: 1.65;
-  color: var(--text);
-  white-space: pre-wrap;
-  word-break: break-word;
-  user-select: text;
-  -webkit-user-select: text;
-}
-
-.plan-actions {
-  flex: none;
-  display: grid;
-  grid-template-columns: 1fr 1.4fr;
-  gap: 10px;
-  padding: 12px 20px calc(var(--sab) + 14px);
-  border-top: 1px solid var(--line);
-}
-#btn-plan-dismiss {
-  padding: 14px 0;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  font-size: 13px;
-  color: var(--dim);
-}
-#btn-plan-dismiss:active { background: var(--elev-2); color: var(--text); }
-#btn-plan-launch {
-  padding: 14px 0;
-  border-radius: 14px;
-  background: var(--teal);
-  color: #06231a;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-#btn-plan-launch:active { background: color-mix(in srgb, var(--teal) 82%, black); }
 
 /* ---------- toast ---------- */
 

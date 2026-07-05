@@ -20,7 +20,7 @@ from voicecode import keychain
 from voicecode.adapters.cartesia_tts import CartesiaTTS
 from voicecode.adapters.deepgram_stt import DeepgramSTT
 from voicecode.audio.pipeline import AudioPipeline
-from voicecode.bootstrap import ensure_convo
+from voicecode.bootstrap import ensure_convo, fresh_convo
 from voicecode.config import Config
 from voicecode.convo import ConvoBridge
 from voicecode.server.app import create_app
@@ -91,6 +91,11 @@ async def _serve() -> None:
     def pipeline_factory(stt, tts, convo_bridge, sink) -> AudioPipeline:
         return AudioPipeline(stt, tts, convo_bridge, sink)
 
+    async def convo_reset() -> Path:
+        session = await fresh_convo(store, substrate, PLUGIN_DIR)
+        bridge.reset(session)
+        return session.transcript
+
     app = create_app(
         config,
         store=store,
@@ -100,6 +105,7 @@ async def _serve() -> None:
         stt_factory=stt_factory,
         tts_factory=tts_factory,
         pipeline_factory=pipeline_factory,
+        convo_reset=convo_reset,
         approvals_token=token,
         plugin_dir=PLUGIN_DIR,
         workstream_settings=settings_path,

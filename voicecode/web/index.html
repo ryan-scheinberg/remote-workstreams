@@ -40,12 +40,14 @@
   <div id="approvals" aria-live="assertive"></div>
 
   <section id="workstreams" aria-label="Workstreams"></section>
+  <div id="ws-dots" aria-hidden="true"></div>
 
   <div id="actionbar">
     <button id="btn-plan" type="button">
-      <span class="spin" aria-hidden="true"></span><span>+ Workstream</span>
+      <span class="spin" aria-hidden="true"></span><span class="label">+ Workstream</span>
     </button>
-    <button id="btn-compact" type="button">Compact</button>
+    <button id="btn-compact" type="button"><span class="label">Compact</span></button>
+    <button id="btn-clear" type="button"><span class="label">Clear</span></button>
   </div>
 
   <div id="composer">
@@ -63,21 +65,6 @@
     </button>
   </div>
 </div>
-
-<div id="backdrop"></div>
-
-<section id="sheet-plan" class="sheet" aria-label="Stint plan">
-  <div class="sheet-grip"></div>
-  <header><h2>stint plan</h2><button class="sheet-close" type="button" aria-label="Close">&#x2715;</button></header>
-  <div id="plan-body" class="sheet-body">
-    <h3 id="plan-title"></h3>
-    <div id="plan-text"></div>
-  </div>
-  <footer class="sheet-foot plan-actions">
-    <button id="btn-plan-dismiss" type="button">Dismiss</button>
-    <button id="btn-plan-launch" type="button">Launch workstream</button>
-  </footer>
-</section>
 
 <div id="toast" hidden></div>
 

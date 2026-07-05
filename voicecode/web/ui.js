@@ -13,18 +13,13 @@ const els = {
   chatEmpty: $("chat-empty"),
   approvals: $("approvals"),
   workstreams: $("workstreams"),
+  wsDots: $("ws-dots"),
   planBtn: $("btn-plan"),
   compactBtn: $("btn-compact"),
+  clearBtn: $("btn-clear"),
   muteBtn: $("btn-mute"),
   composerInput: $("composer-input"),
   composerSend: $("composer-send"),
-  backdrop: $("backdrop"),
-  sheetPlan: $("sheet-plan"),
-  planBody: $("plan-body"),
-  planTitle: $("plan-title"),
-  planText: $("plan-text"),
-  planLaunch: $("btn-plan-launch"),
-  planDismiss: $("btn-plan-dismiss"),
   toast: $("toast"),
   screenLogin: $("screen-login"),
   screenPairing: $("screen-pairing"),
@@ -41,8 +36,7 @@ let handlers = {};
 let connState = "offline"; // offline | connecting | connected
 let pipeState = "listening"; // protocol pipeline state
 const pending = { user: null, assistant: null }; // interim chat bubbles
-let planId = null; // plan_id of the stint plan currently in the sheet
-let compactTimer = 0;
+let wsCount = 0; // workstream cards last render; a new one clears planPending
 let toastTimer = 0;
 
 // Chip copy per pipeline state (quoted so the protocol drift test sees them).
@@ -67,18 +61,16 @@ export function init(h) {
   els.composerInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendComposer();
   });
-  els.planBtn.addEventListener("click", () => {
-    if (handlers.onPlanStint()) planPending(true);
+  confirmTap(els.planBtn, () => {
+    if (handlers.onNewWorkstream()) planPending(true);
   });
-  els.compactBtn.addEventListener("click", compactTap);
-  els.planLaunch.addEventListener("click", () => {
-    if (planId !== null && handlers.onLaunch(planId)) hideStintPlan();
+  confirmTap(els.compactBtn, () => {
+    if (handlers.onCompact()) toast("Compacting the conversation…");
   });
-  els.planDismiss.addEventListener("click", hideStintPlan);
-  els.backdrop.addEventListener("click", hideStintPlan);
-  for (const btn of document.querySelectorAll(".sheet-close")) {
-    btn.addEventListener("click", hideStintPlan);
-  }
+  confirmTap(els.clearBtn, () => {
+    if (handlers.onClearConvo()) toast("Starting a fresh conversation…");
+  });
+  els.workstreams.addEventListener("scroll", updateWsDots, { passive: true });
   // Locking must be instant — no confirm tap.
   els.lockBtn.addEventListener("click", () => handlers.onLock());
 }
@@ -208,49 +200,49 @@ function sendComposer() {
 
 // ---- action bar ----
 
+// Every action-bar button confirms the same way: first tap arms (accented
+// label + "?"), a second within 2.6s fires, untouched it disarms itself.
+function confirmTap(btn, fire) {
+  const label = btn.querySelector(".label");
+  const idle = label.textContent;
+  let timer = 0;
+  const disarm = () => {
+    clearTimeout(timer);
+    btn.classList.remove("armed");
+    label.textContent = idle;
+  };
+  btn.addEventListener("click", () => {
+    if (!btn.classList.contains("armed")) {
+      btn.classList.add("armed");
+      label.textContent = `${idle}?`;
+      timer = setTimeout(disarm, 2600);
+      return;
+    }
+    disarm();
+    fire();
+  });
+}
+
 export function planPending(on) {
   els.planBtn.classList.toggle("pending", on);
   els.planBtn.disabled = on;
 }
 
-// Compact needs a confirm tap: first tap arms, second within 2.6s fires.
-function compactTap() {
-  if (!els.compactBtn.classList.contains("armed")) {
-    els.compactBtn.classList.add("armed");
-    els.compactBtn.textContent = "Compact?";
-    compactTimer = setTimeout(disarmCompact, 2600);
-    return;
-  }
-  disarmCompact();
-  if (handlers.onCompact()) toast("Compacting the conversation…");
-}
+// ---- workstream pager: one card visible, swipe sideways for the others ----
 
-function disarmCompact() {
-  clearTimeout(compactTimer);
-  els.compactBtn.classList.remove("armed");
-  els.compactBtn.textContent = "Compact";
-}
-
-// ---- stint plan sheet ----
-
-export function showStintPlan(plan) {
-  planId = plan.plan_id;
-  els.planTitle.textContent = plan.title || "Stint plan";
-  els.planText.textContent = plan.text || "";
-  els.planBody.scrollTop = 0;
-  els.sheetPlan.classList.add("open");
-  els.backdrop.classList.add("open");
-}
-
-export function hideStintPlan() {
-  els.sheetPlan.classList.remove("open");
-  els.backdrop.classList.remove("open");
-}
-
-// ---- workstream cards ----
+let wsSnapshot = ""; // skip re-rendering unchanged cards: pushes come every 5s
 
 export function renderWorkstreams(workstreams) {
+  const added = workstreams.length > wsCount;
+  if (added) planPending(false); // the launched workstream is the "done" signal
+  wsCount = workstreams.length;
+
+  const snap = JSON.stringify(workstreams.map((ws) => [ws.name, ws.title, ws.status]));
+  if (snap === wsSnapshot) return; // rebuilding would kill swipe position + armed ✕
+  wsSnapshot = snap;
+
   const chatPinned = pinned(els.chat); // cards below shrink the chat viewport
+  const keepScroll = els.workstreams.scrollLeft;
   els.workstreams.replaceChildren(); // empty list renders nothing at all
   for (const ws of workstreams) {
     // Compact card: status dot + a clear name + the two controls. Nothing else.
@@ -302,7 +294,27 @@ export function renderWorkstreams(workstreams) {
 
     els.workstreams.append(card);
   }
+  // Dots only when there's something to swipe to.
+  els.wsDots.replaceChildren(
+    ...(workstreams.length > 1 ? workstreams.map(() => document.createElement("span")) : [])
+  );
+  if (added) {
+    els.workstreams.scrollLeft = els.workstreams.scrollWidth; // show the new card
+  } else {
+    els.workstreams.scrollLeft = keepScroll;
+  }
+  updateWsDots();
   keepPinned(els.chat, chatPinned);
+}
+
+function updateWsDots() {
+  const dots = els.wsDots.children;
+  if (!dots.length) return;
+  const max = els.workstreams.scrollWidth - els.workstreams.clientWidth;
+  const i = max > 0
+    ? Math.round((els.workstreams.scrollLeft / max) * (dots.length - 1))
+    : 0;
+  for (let j = 0; j < dots.length; j++) dots[j].classList.toggle("active", j === i);
 }
 
 // ---- approval cards ----

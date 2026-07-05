@@ -1,5 +1,4 @@
 import asyncio
-import json
 from pathlib import Path
 
 import pytest
@@ -52,26 +51,29 @@ async def wait_for_spawn(substrate, count=1):
         await asyncio.sleep(0.005)
 
 
-async def launch(rig, plan_id="abc12345", plan_text=PLAN_TEXT):
+async def launch(rig, plan_text=PLAN_TEXT):
+    """Run new_workstream end-to-end, standing in for the planner; returns the
+    plan path. The workstream session is substrate.spawned[-1]."""
     manager, store, substrate, notify, tmp_path = rig
-    plan = tmp_path / "data" / "plans" / f"plan-{plan_id}.md"
-    plan.parent.mkdir(parents=True, exist_ok=True)
+    task = asyncio.create_task(manager.new_workstream())
+    await wait_for_spawn(substrate)
+    plan = output_path(substrate.spawned[-1].spec)
     plan.write_text(plan_text)
-    await manager.launch_workstream(plan_id)
+    await task
     return plan
 
 
-async def test_plan_stint_spawns_planner_and_pushes_plan(rig):
+async def test_new_workstream_plans_then_launches(rig):
     manager, store, substrate, notify, tmp_path = rig
     write_convo_lines(tmp_path, 3)
 
-    task = asyncio.create_task(manager.plan_stint())
+    task = asyncio.create_task(manager.new_workstream())
     await wait_for_spawn(substrate)
-    spec = substrate.spawned[0].spec
-    assert (spec.name, spec.model, spec.effort) == ("plan", "opus", "high")
-    assert spec.plugin_dir == Path("/plugins/claude-code")
-    output = output_path(spec)
-    assert spec.initial_prompt == (
+    planner = substrate.spawned[0].spec
+    assert (planner.name, planner.model, planner.effort) == ("plan", "opus", "high")
+    assert planner.plugin_dir == Path("/plugins/claude-code")
+    output = output_path(planner)
+    assert planner.initial_prompt == (
         f"/voice-code:role-stint-plan convo={tmp_path / 'convo.jsonl'}"
         f" since_line=0 output={output}"
     )
@@ -81,55 +83,9 @@ async def test_plan_stint_spawns_planner_and_pushes_plan(rig):
     output.write_text(PLAN_TEXT)
     await task
     assert substrate.killed == ["voice:plan"]
-    assert output.exists()  # the plan file is kept for launch
-    (plan,) = notify.messages
-    assert plan.type == "stint_plan"
-    assert plan.title == "Wire the auth flow"
-    assert plan.text == PLAN_TEXT
-    assert output.name == f"plan-{plan.plan_id}.md"
 
-
-async def test_plan_stint_since_line_comes_from_stored_marker(rig):
-    manager, store, substrate, notify, tmp_path = rig
-    store.set_marker(7)
-    write_convo_lines(tmp_path, 9)
-    task = asyncio.create_task(manager.plan_stint())
-    await wait_for_spawn(substrate)
-    assert "since_line=7" in substrate.spawned[0].spec.initial_prompt
-    assert store.get_marker() == 9
-    output_path(substrate.spawned[0].spec).write_text(PLAN_TEXT)
-    await task
-
-
-async def test_plan_stint_waits_out_empty_file(rig):
-    """The planner's output file can exist before its content lands; an empty
-    read must not be treated as the plan."""
-    manager, store, substrate, notify, tmp_path = rig
-    task = asyncio.create_task(manager.plan_stint())
-    await wait_for_spawn(substrate)
-    output = output_path(substrate.spawned[0].spec)
-    output.write_text("")  # created, not yet written
-    await asyncio.sleep(0.05)
-    output.write_text(PLAN_TEXT)
-    await task
-    (plan,) = notify.messages
-    assert plan.type == "stint_plan" and plan.title == "Wire the auth flow"
-
-
-async def test_plan_stint_timeout_kills_planner_and_pushes_error(rig):
-    manager, store, substrate, notify, tmp_path = rig
-    manager._poll_budget = 0.03
-    await manager.plan_stint()  # nobody writes the output file
-    assert substrate.killed == ["voice:plan"]
-    (error,) = notify.messages
-    assert error.type == "error"
-    assert "timed out" in error.message
-
-
-async def test_launch_workstream_pastes_plan_and_persists(rig):
-    manager, store, substrate, notify, tmp_path = rig
-    plan = await launch(rig)
-    (session,) = substrate.spawned
+    # The plan launched straight into a workstream — no review step, no plan push.
+    session = substrate.spawned[1]
     spec = session.spec
     assert spec.name == "ws-wire-the-auth-flow"
     assert (spec.model, spec.effort) == ("fable", "xhigh")
@@ -142,7 +98,7 @@ async def test_launch_workstream_pastes_plan_and_persists(rig):
     (row,) = store.list_workstreams()
     assert row.name == "ws-wire-the-auth-flow"
     assert row.cc_session_id == session.session_id
-    assert row.plan_path == str(plan)
+    assert row.plan_path == str(output)
     assert row.status == "running"
 
     (cards,) = notify.messages
@@ -153,24 +109,54 @@ async def test_launch_workstream_pastes_plan_and_persists(rig):
     )
 
 
-async def test_launch_unknown_plan_pushes_error(rig):
+async def test_new_workstream_since_line_comes_from_stored_marker(rig):
     manager, store, substrate, notify, tmp_path = rig
-    await manager.launch_workstream("nope")
+    store.set_marker(7)
+    write_convo_lines(tmp_path, 9)
+    task = asyncio.create_task(manager.new_workstream())
+    await wait_for_spawn(substrate)
+    assert "since_line=7" in substrate.spawned[0].spec.initial_prompt
+    assert store.get_marker() == 9
+    output_path(substrate.spawned[0].spec).write_text(PLAN_TEXT)
+    await task
+
+
+async def test_new_workstream_waits_out_empty_plan_file(rig):
+    """The planner's output file can exist before its content lands; an empty
+    read must not be treated as the plan."""
+    manager, store, substrate, notify, tmp_path = rig
+    task = asyncio.create_task(manager.new_workstream())
+    await wait_for_spawn(substrate)
+    output = output_path(substrate.spawned[0].spec)
+    output.write_text("")  # created, not yet written
+    await asyncio.sleep(0.05)
+    output.write_text(PLAN_TEXT)
+    await task
+    (card,) = notify.messages[-1].workstreams
+    assert card.name == "ws-wire-the-auth-flow"
+
+
+async def test_new_workstream_planner_timeout_pushes_error(rig):
+    manager, store, substrate, notify, tmp_path = rig
+    manager._poll_budget = 0.03
+    await manager.new_workstream()  # nobody writes the output file
+    assert substrate.killed == ["voice:plan"]
+    assert len(substrate.spawned) == 1  # no workstream was launched
     (error,) = notify.messages
-    assert error.type == "error" and "unknown plan" in error.message
-    assert substrate.spawned == []
+    assert error.type == "error"
+    assert "timed out" in error.message
 
 
 async def test_send_to_workstream_ferries_directive_and_advances_marker(rig):
     manager, store, substrate, notify, tmp_path = rig
     await launch(rig)
-    ws_session = substrate.spawned[0]
+    ws_session = substrate.spawned[-1]
     store.set_marker(2)
     write_convo_lines(tmp_path, 5)
 
     task = asyncio.create_task(manager.send_to_workstream("ws-wire-the-auth-flow"))
-    await wait_for_spawn(substrate, count=2)
-    spec = substrate.spawned[1].spec
+    await wait_for_spawn(substrate, count=3)
+    spec = substrate.spawned[2].spec
     assert (spec.name, spec.model, spec.effort) == ("inject", "opus", "high")
     output = output_path(spec)
     assert spec.initial_prompt == (
@@ -179,7 +165,7 @@ async def test_send_to_workstream_ferries_directive_and_advances_marker(rig):
     )
     output.write_text("Focus the retry loop on idempotent writes only.")
     await task
-    assert substrate.killed == ["voice:inject"]
+    assert substrate.killed[-1] == "voice:inject"
     assert substrate.sent[-1] == (
         "voice:ws-wire-the-auth-flow",
         "Focus the retry loop on idempotent writes only.",
@@ -197,7 +183,7 @@ async def test_send_to_workstream_timeout_keeps_marker(rig):
     await manager.send_to_workstream("ws-wire-the-auth-flow")
     (error,) = notify.messages
     assert error.type == "error" and "timed out" in error.message
-    assert substrate.killed == ["voice:inject"]
+    assert substrate.killed[-1] == "voice:inject"
     assert store.get_marker() == 2  # nothing was delivered; the delta is not lost
 
 
@@ -208,39 +194,16 @@ async def test_send_to_unknown_workstream_pushes_error(rig):
     assert error.type == "error" and "unknown workstream" in error.message
 
 
-def transcript_lines() -> str:
-    lines = [
-        {"type": "user", "message": {"role": "user", "content": "Fix the login bug"},
-         "timestamp": "t1"},
-        {"type": "assistant",
-         "message": {"content": [{"type": "text", "text": "On it — reading the auth module."}]},
-         "timestamp": "t2"},
-        {"type": "assistant",
-         "message": {"content": [{"type": "tool_use", "name": "Bash",
-                                  "input": {"command": "git status", "description": "Check status"}}]},
-         "timestamp": "t3"},
-        {"type": "system", "subtype": "turn_duration", "timestamp": "t4"},
-    ]
-    return "".join(json.dumps(line) + "\n" for line in lines)
-
-
-async def test_cards_carry_tail_last_activity_and_status(rig):
+async def test_cards_track_window_aliveness(rig):
     manager, store, substrate, notify, tmp_path = rig
     await launch(rig)
-    session = substrate.spawned[0]
-    with session.transcript.open("a") as f:  # transcripts only ever grow
-        f.write(transcript_lines())
+    session = substrate.spawned[-1]
 
     await manager.push_cards()
     (card,) = notify.messages[-1].workstreams
-    assert card.tail == [
-        "Ready.",  # the boot greeting FakeSubstrate seeds
-        "» Fix the login bug",
-        "On it — reading the auth module.",
-        "Bash: Check status",
-    ]
-    assert card.last_activity == "t4"  # TurnEnd still counts as activity
-    assert card.status == "running"
+    assert (card.name, card.title, card.status) == (
+        "ws-wire-the-auth-flow", "Wire the auth flow", "running",
+    )
 
     substrate.alive_windows.discard(session.window)  # the window died
     await manager.push_cards()
@@ -252,7 +215,7 @@ async def test_cards_carry_tail_last_activity_and_status(rig):
 async def test_manager_rehydrates_from_store(rig):
     manager, store, substrate, notify, tmp_path = rig
     await launch(rig)
-    session = substrate.spawned[0]
+    session = substrate.spawned[-1]
 
     manager2 = WorkstreamManager(
         substrate,
@@ -285,7 +248,7 @@ async def test_run_pushes_cards_on_interval(rig):
 async def test_end_workstream_kills_window_and_drops_card(rig):
     manager, store, substrate, notify, tmp_path = rig
     await launch(rig)
-    session = substrate.spawned[0]
+    session = substrate.spawned[-1]
 
     await manager.end_workstream("ws-wire-the-auth-flow")
     assert session.window in substrate.killed

@@ -28,7 +28,7 @@ from voicecode.adapters.tts import TTSAdapter
 from voicecode.audio.pipeline import AudioPipeline
 from voicecode.config import Config
 from voicecode.convo import ConvoBridge
-from voicecode.protocol import Approval, Compact, Hello, PlanStint, TextInput
+from voicecode.protocol import Approval, Compact, Hello, NewWorkstream, TextInput
 from voicecode.server.app import create_app
 from voicecode.server.store import Store
 from voicecode.substrate import CCSession, SessionSpec
@@ -157,6 +157,9 @@ def assembled(tmp_path: Path, hold_tts: bool = False):
         ttss.append(MarkerTTS(hold_first=hold_tts))
         return ttss[-1]
 
+    async def convo_reset() -> Path:
+        raise AssertionError("clear_convo is not under test here")
+
     config = Config(data_dir=tmp_path / "data")
     app = create_app(
         config,
@@ -167,6 +170,7 @@ def assembled(tmp_path: Path, hold_tts: bool = False):
         stt_factory=stt_factory,
         tts_factory=tts_factory,
         pipeline_factory=AudioPipeline,
+        convo_reset=convo_reset,
         approvals_token="boot-token",
         plugin_dir=tmp_path / "plugin",
         workstream_settings=tmp_path / "workstream-settings.json",
@@ -352,28 +356,26 @@ def test_barge_in_keeps_chat_and_next_turn_speaks(tmp_path):
 # ---- seams 4 + 2: workstream lifecycle and check-in over the live socket ----
 
 
-def test_plan_launch_and_check_in_over_live_ws(tmp_path):
+def test_new_workstream_and_check_in_over_live_ws(tmp_path):
     with assembled(tmp_path) as rig, rig.client.websocket_connect("/ws") as ws:
         assert hello(ws)["type"] == "ready"
         append(rig.transcript, user_line("let's plan the day"), assistant_line("Sure."),
                turn_end_line())
         collect_until(ws, lambda f: f.get("type") == "chat" and f["role"] == "assistant")
 
-        ws.send_text(PlanStint().model_dump_json())
+        plan_text = "Stint: Ship the QA suite\n\nGoal: coverage.\n"
+        ws.send_text(NewWorkstream().model_dump_json())
         wait_for(lambda: any(s.spec.name == "plan" for s in rig.substrate.spawned))
         planner = next(s for s in rig.substrate.spawned if s.spec.name == "plan")
         prompt = planner.spec.initial_prompt
         assert f"convo={rig.transcript}" in prompt and "since_line=0" in prompt
-        plan_path = Path(prompt.split("output=")[1])
-        plan_path.write_text("Stint: Ship the QA suite\n\nGoal: coverage.\n")  # the planner's job
-        plan = collect_until(ws, lambda f: f.get("type") == "stint_plan")[-1]
-        assert plan["title"] == "Ship the QA suite"
-        assert "voice:plan" in rig.substrate.killed
+        Path(prompt.split("output=")[1]).write_text(plan_text)  # the planner's job
 
-        ws.send_text(json.dumps({"type": "launch_workstream", "plan_id": plan["plan_id"]}))
+        # The plan launches straight into a workstream — no review card in between.
         wait_for(lambda: any(s.spec.name.startswith("ws-") for s in rig.substrate.spawned))
         ws_session = next(s for s in rig.substrate.spawned if s.spec.name.startswith("ws-"))
-        wait_for(lambda: (ws_session.window, plan["text"]) in rig.substrate.sent)  # plan pasted
+        wait_for(lambda: (ws_session.window, plan_text) in rig.substrate.sent)  # plan pasted
+        assert "voice:plan" in rig.substrate.killed
         assert (ws_session.spec.model, ws_session.spec.effort) == ("fable", "xhigh")
         card = collect_until(ws, lambda f: f.get("type") == "workstreams")[-1]["workstreams"][0]
         assert (card["name"], card["status"]) == ("ws-ship-the-qa-suite", "running")

@@ -22,6 +22,7 @@ from voicecode.server.logs import log, setup_logging
 from voicecode.server.runtime import (
     ClientPush,
     ConvoBridge,
+    ConvoReset,
     ConvoRuntime,
     PipelineFactory,
     STTFactory,
@@ -65,6 +66,7 @@ def create_app(
     stt_factory: STTFactory,
     tts_factory: TTSFactory,
     pipeline_factory: PipelineFactory,
+    convo_reset: ConvoReset,
     approvals_token: str,
     plugin_dir: Path,
     workstream_settings: Path,
@@ -90,6 +92,7 @@ def create_app(
         stt_factory=stt_factory,
         tts_factory=tts_factory,
         pipeline_factory=pipeline_factory,
+        convo_reset=convo_reset,
     )
 
     @asynccontextmanager

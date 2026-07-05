@@ -12,11 +12,11 @@ from voicecode.audio.state import PipelineState
 from voicecode.protocol import (
     Approval,
     CheckIn,
+    ClearConvo,
     Compact,
     Hello,
-    LaunchWorkstream,
     Mute,
-    PlanStint,
+    NewWorkstream,
     SendToWorkstream,
     TextInput,
 )
@@ -183,12 +183,10 @@ class RecordingManager:
 
     def __init__(self) -> None:
         self.calls: list[tuple] = []
+        self.convo_transcript = Path("/transcripts/convo.jsonl")
 
-    async def plan_stint(self) -> None:
-        self.calls.append(("plan_stint",))
-
-    async def launch_workstream(self, plan_id: str) -> None:
-        self.calls.append(("launch_workstream", plan_id))
+    async def new_workstream(self) -> None:
+        self.calls.append(("new_workstream",))
 
     async def send_to_workstream(self, name: str) -> None:
         self.calls.append(("send_to_workstream", name))
@@ -202,8 +200,7 @@ def test_buttons_reach_manager_compact_reaches_bridge(client, fakes):
     client.app_state.runtime.workstreams = manager
     with client.websocket_connect("/ws") as ws:
         hello(ws)
-        ws.send_text(PlanStint().model_dump_json())
-        ws.send_text(LaunchWorkstream(plan_id="p1").model_dump_json())
+        ws.send_text(NewWorkstream().model_dump_json())
         ws.send_text(SendToWorkstream(workstream="ws-auth").model_dump_json())
         ws.send_text(Compact().model_dump_json())
         ws.send_text(CheckIn(workstream="ws-known").model_dump_json())
@@ -213,10 +210,9 @@ def test_buttons_reach_manager_compact_reaches_bridge(client, fakes):
         assert json.loads(ws.receive_text())["type"] == "speech_end"
         assert json.loads(ws.receive_text())["state"] == "listening"
 
-        wait_for(lambda: len(manager.calls) == 3)
+        wait_for(lambda: len(manager.calls) == 2)
         assert manager.calls == [
-            ("plan_stint",),
-            ("launch_workstream", "p1"),
+            ("new_workstream",),
             ("send_to_workstream", "ws-auth"),
         ]
         assert fakes.bridge.slashes == ["/compact"]
@@ -225,6 +221,17 @@ def test_buttons_reach_manager_compact_reaches_bridge(client, fakes):
             "Check in on workstream ws-known: read the tail of"
             " /transcripts/ws-known.jsonl and tell me where things stand."
         )
+
+
+def test_clear_convo_resets_and_repoints_the_manager(client, fakes):
+    manager = RecordingManager()
+    client.app_state.runtime.workstreams = manager
+    with client.websocket_connect("/ws") as ws:
+        hello(ws)
+        ws.send_text(ClearConvo().model_dump_json())
+        assert json.loads(ws.receive_text()) == {"type": "convo_cleared"}
+        assert fakes.convo_resets == 1
+        assert manager.convo_transcript == fakes.fresh_transcript
 
 
 def test_check_in_unknown_workstream_pushes_error(client, fakes):

@@ -62,6 +62,16 @@ class ConvoBridge:
         """The last `limit` entries, parsed fresh from the whole transcript file."""
         return TranscriptTail(self._session.transcript).read_new()[-limit:]
 
+    def reset(self, session: CCSession) -> None:
+        """Point at a brand-new convo session (Clear): fresh tail, any in-flight
+        turn stream ends quietly. Subscribers stay attached."""
+        self._session = session
+        self._tail = TranscriptTail(session.transcript)
+        self._unfinished = 0
+        if self._turn_queue is not None:
+            self._turn_queue.put_nowait(None)
+            self._turn_queue = None
+
     async def send(self, text: str) -> None:
         await self._substrate.send(self._session, text)
 

@@ -7,12 +7,12 @@ CLIENT_MESSAGES = [
     protocol.Hello(credential="cred-1"),
     protocol.TextInput(text="hi"),
     protocol.Mute(muted=True),
-    protocol.PlanStint(),
-    protocol.LaunchWorkstream(plan_id="p1"),
+    protocol.NewWorkstream(),
     protocol.SendToWorkstream(workstream="ws-auth"),
     protocol.CheckIn(workstream="ws-auth"),
     protocol.EndWorkstream(workstream="ws-auth"),
     protocol.Compact(),
+    protocol.ClearConvo(),
     protocol.Approval(approval_id="a1", approved=True),
 ]
 
@@ -24,16 +24,10 @@ SERVER_MESSAGES = [
     protocol.SpeechEnd(),
     protocol.Workstreams(
         workstreams=[
-            protocol.WorkstreamCard(
-                name="ws-auth",
-                title="Wire the auth flow",
-                status="running",
-                last_activity="2026-07-03T12:00:00Z",
-                tail=["» do the thing", "Bash: git status"],
-            )
+            protocol.WorkstreamCard(name="ws-auth", title="Wire the auth flow", status="running")
         ]
     ),
-    protocol.StintPlan(plan_id="p1", title="Wire the auth flow", text="Stint: Wire the auth flow"),
+    protocol.ConvoCleared(),
     protocol.ApprovalRequest(approval_id="a1", session="s1", tool="Bash", summary="rm -rf /tmp/x"),
     protocol.Error(message="nope"),
 ]

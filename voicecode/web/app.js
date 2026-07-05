@@ -37,9 +37,9 @@ ui.init({
   onLock: lock,
   onMute: toggleMute,
   onText: (text) => send({ type: "text_input", text }),
-  onPlanStint: () => send({ type: "plan_stint" }),
+  onNewWorkstream: () => send({ type: "new_workstream" }),
   onCompact: () => send({ type: "compact" }),
-  onLaunch: (planId) => send({ type: "launch_workstream", plan_id: planId }),
+  onClearConvo: () => send({ type: "clear_convo" }),
   onSendToWorkstream: (name) => send({ type: "send_to_workstream", workstream: name }),
   onCheckIn: (name) => send({ type: "check_in", workstream: name }),
   onEndWorkstream: (name) => send({ type: "end_workstream", workstream: name }),
@@ -180,7 +180,7 @@ function connect() {
     if (app.ws !== ws) return;
     app.ready = false;
     ui.setConnection("offline");
-    ui.planPending(false); // a stint_plan can't arrive on a dead socket
+    ui.planPending(false); // the pending workstream can't report back on a dead socket
     scheduleReconnect();
   };
 }
@@ -235,9 +235,9 @@ function handleMessage(msg) {
     case "workstreams":
       ui.renderWorkstreams(msg.workstreams);
       break;
-    case "stint_plan":
-      ui.planPending(false);
-      ui.showStintPlan(msg);
+    case "convo_cleared":
+      ui.clearChat();
+      ui.toast("Fresh conversation.");
       break;
     case "approval_request":
       ui.addApproval(msg);
@@ -249,7 +249,7 @@ function handleMessage(msg) {
         ui.toast("Session expired — unlock again.", true);
         return;
       }
-      ui.planPending(false); // the pending plan_stint may be what errored
+      ui.planPending(false); // the pending workstream may be what errored
       ui.toast(msg.message, true);
       break;
     default:

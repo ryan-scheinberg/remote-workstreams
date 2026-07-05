@@ -10,16 +10,15 @@ import logging
 import re
 import time
 import uuid
-from collections import deque
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from voicecode import protocol
 from voicecode.server.logs import log
 from voicecode.server.store import Store
 from voicecode.substrate import CCSession, SessionSpec, Substrate
-from voicecode.transcript import AssistantText, Entry, ToolActivity, TranscriptTail, UserText
+from voicecode.transcript import AssistantText, TranscriptTail
 
 logger = logging.getLogger("voicecode.server.workstreams")
 
@@ -27,8 +26,6 @@ logger = logging.getLogger("voicecode.server.workstreams")
 PLANNER_MODEL, PLANNER_EFFORT = "opus", "high"
 INJECTOR_MODEL, INJECTOR_EFFORT = "opus", "high"
 WORKSTREAM_MODEL, WORKSTREAM_EFFORT = "fable", "xhigh"
-
-TAIL_LEN = 6
 
 Notify = Callable[[object], Awaitable[None]]
 
@@ -42,25 +39,10 @@ def _title(plan_text: str) -> str:
     return plan_text.splitlines()[0].removeprefix("Stint:").strip()
 
 
-def _tail_line(entry: Entry) -> str | None:
-    if isinstance(entry, UserText):
-        text = "» " + entry.text
-    elif isinstance(entry, AssistantText):
-        text = entry.text
-    elif isinstance(entry, ToolActivity):
-        text = entry.label
-    else:  # TurnEnd
-        return None
-    return " ".join(text.split())[:100]
-
-
 @dataclass
 class _Workstream:
     session: CCSession
     title: str
-    tail: TranscriptTail
-    lines: deque[str] = field(default_factory=lambda: deque(maxlen=TAIL_LEN))
-    last_activity: str = ""
     status: str = "running"
 
 
@@ -82,7 +64,7 @@ class WorkstreamManager:
         self.substrate = substrate
         self.store = store
         self.notify = client_notify
-        self._convo_transcript = convo_transcript
+        self.convo_transcript = convo_transcript  # runtime re-points this on Clear
         self._data_dir = data_dir
         self._plugin_dir = plugin_dir
         self._settings_file = settings_file
@@ -95,17 +77,16 @@ class WorkstreamManager:
             spec = self._workstream_spec(row.name, row.title)
             session = CCSession(row.cc_session_id, row.window, transcript, spec)
             self._workstreams[row.name] = _Workstream(
-                session=session,
-                title=row.title,
-                tail=TranscriptTail(transcript),
-                status=row.status,
+                session=session, title=row.title, status=row.status
             )
 
     def transcript_path(self, name: str) -> Path | None:
         ws = self._workstreams.get(name)
         return ws.session.transcript if ws is not None else None
 
-    async def plan_stint(self) -> None:
+    async def new_workstream(self) -> None:
+        """Plan a stint from the conversation delta, then launch it — the planner's
+        output is trusted, never shown for review."""
         since = self.store.get_marker()
         self.store.set_marker(self._convo_lines())
         plan_id = uuid.uuid4().hex[:8]
@@ -118,39 +99,27 @@ class WorkstreamManager:
             display_name="plan",
             plugin_dir=self._plugin_dir,
             initial_prompt=(
-                f"/voice-code:role-stint-plan convo={self._convo_transcript}"
+                f"/voice-code:role-stint-plan convo={self.convo_transcript}"
                 f" since_line={since} output={output}"
             ),
         )
-        session = await self.substrate.spawn(spec)
+        planner = await self.substrate.spawn(spec)
         text = await self._await_file(output)
-        await self.substrate.kill(session)
+        await self.substrate.kill(planner)
         if text is None:
             await self.notify(protocol.Error(message="stint planner timed out"))
             return
         title = _title(text)
-        log(logger, "stint_planned", plan_id=plan_id, title=title)
-        await self.notify(protocol.StintPlan(plan_id=plan_id, title=title, text=text))
-
-    async def launch_workstream(self, plan_id: str) -> None:
-        path = self._data_dir / "plans" / f"plan-{plan_id}.md"
-        try:
-            text = path.read_text()
-        except FileNotFoundError:
-            await self.notify(protocol.Error(message=f"unknown plan: {plan_id}"))
-            return
-        title = _title(text)
         name = f"ws-{_slug(title)}"
+        log(logger, "stint_planned", plan_id=plan_id, title=title)
         session = await self.substrate.spawn(self._workstream_spec(name, title))
         if not await self._await_ready(session):
             await self.substrate.kill(session)
             await self.notify(protocol.Error(message="workstream session failed to start"))
             return
         await self.substrate.send(session, text)  # the full plan is the first message
-        self.store.add_workstream(name, session.session_id, session.window, title, str(path))
-        self._workstreams[name] = _Workstream(
-            session=session, title=title, tail=TranscriptTail(session.transcript)
-        )
+        self.store.add_workstream(name, session.session_id, session.window, title, str(output))
+        self._workstreams[name] = _Workstream(session=session, title=title)
         log(logger, "workstream_launched", name=name, cc_session_id=session.session_id)
         await self.push_cards()
 
@@ -180,7 +149,7 @@ class WorkstreamManager:
             display_name="inject",
             plugin_dir=self._plugin_dir,
             initial_prompt=(
-                f"/voice-code:role-inject convo={self._convo_transcript} since_line={since}"
+                f"/voice-code:role-inject convo={self.convo_transcript} since_line={since}"
                 f" workstream={ws.session.transcript} output={output}"
             ),
         )
@@ -204,25 +173,11 @@ class WorkstreamManager:
     async def push_cards(self) -> None:
         cards = []
         for name, ws in self._workstreams.items():
-            for entry in ws.tail.read_new():
-                line = _tail_line(entry)
-                if line is not None:
-                    ws.lines.append(line)
-                if entry.ts:
-                    ws.last_activity = entry.ts
             status = "running" if await self.substrate.alive(ws.session) else "gone"
             if status != ws.status:
                 ws.status = status
                 self.store.set_workstream_status(name, status)
-            cards.append(
-                protocol.WorkstreamCard(
-                    name=name,
-                    title=ws.title,
-                    status=status,
-                    last_activity=ws.last_activity,
-                    tail=list(ws.lines),
-                )
-            )
+            cards.append(protocol.WorkstreamCard(name=name, title=ws.title, status=status))
         await self.notify(protocol.Workstreams(workstreams=cards))
 
     def _workstream_spec(self, name: str, title: str) -> SessionSpec:
@@ -238,7 +193,7 @@ class WorkstreamManager:
 
     def _convo_lines(self) -> int:
         try:
-            return self._convo_transcript.read_bytes().count(b"\n")
+            return self.convo_transcript.read_bytes().count(b"\n")
         except FileNotFoundError:
             return 0
 

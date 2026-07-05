@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from server_fakes import FakeSubstrate
-from voicecode.bootstrap import ensure_convo
+from voicecode.bootstrap import ensure_convo, fresh_convo
 from voicecode.server.store import Store
 
 PLUGIN_DIR = Path("/plugins/claude-code")
@@ -52,3 +52,24 @@ async def test_dead_window_respawns_with_resume(rig):
     assert session.spec.resume is True
     assert session.spec.initial_prompt is None  # the role is already in its history
     assert store.get_convo_session() == "cc-stored"
+
+
+async def test_fresh_convo_replaces_the_live_session(rig):
+    store, substrate = rig
+    first = await ensure_convo(store, substrate, PLUGIN_DIR)
+    store.set_marker(9)
+
+    session = await fresh_convo(store, substrate, PLUGIN_DIR)
+    assert substrate.killed == [first.window]
+    assert session.session_id != first.session_id  # brand-new, not resumed
+    assert session.spec.resume is False
+    assert session.spec.initial_prompt == "/voice-code:role-convo"
+    assert store.get_convo_session() == session.session_id
+    assert store.get_marker() == 0  # the old transcript's line counts are meaningless
+
+
+async def test_fresh_convo_with_nothing_stored_just_spawns(rig):
+    store, substrate = rig
+    session = await fresh_convo(store, substrate, PLUGIN_DIR)
+    assert substrate.killed == []
+    assert store.get_convo_session() == session.session_id

@@ -12,8 +12,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import AsyncIterator, Callable, Coroutine
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Literal, Protocol
 
 from voicecode import protocol
@@ -29,6 +30,9 @@ logger = logging.getLogger("voicecode.server.runtime")
 
 STTFactory = Callable[[], STTAdapter]
 TTSFactory = Callable[[], TTSAdapter]
+# Kills the convo session, spawns a fresh one, re-points the bridge; returns the
+# new transcript path. The composition root supplies it (it owns the concretes).
+ConvoReset = Callable[[], Awaitable[Path]]
 
 
 class ConvoBridge(Protocol):
@@ -130,6 +134,7 @@ class ConvoRuntime:
         stt_factory: STTFactory,
         tts_factory: TTSFactory,
         pipeline_factory: PipelineFactory,
+        convo_reset: ConvoReset,
     ) -> None:
         self.bridge = bridge
         self.push = push
@@ -138,6 +143,7 @@ class ConvoRuntime:
         self.stt_factory = stt_factory
         self.tts_factory = tts_factory
         self.pipeline_factory = pipeline_factory
+        self.convo_reset = convo_reset
         self.conn: ClientConnection | None = None
         self.pipeline: Pipeline | None = None
         self._pipeline_task: asyncio.Task | None = None
@@ -188,11 +194,8 @@ class ConvoRuntime:
 
     # ---- buttons ----
 
-    def plan_stint(self) -> None:
-        self._background(self.workstreams.plan_stint())
-
-    def launch_workstream(self, plan_id: str) -> None:
-        self._background(self.workstreams.launch_workstream(plan_id))
+    def new_workstream(self) -> None:
+        self._background(self.workstreams.new_workstream())
 
     def send_to_workstream(self, name: str) -> None:
         self._background(self.workstreams.send_to_workstream(name))
@@ -214,6 +217,16 @@ class ConvoRuntime:
 
     async def compact(self) -> None:
         await self.bridge.slash("/compact")
+
+    def clear_convo(self) -> None:
+        self._background(self._clear_convo())
+
+    async def _clear_convo(self) -> None:
+        # Planners and injectors read the convo transcript; a fresh session means
+        # a fresh file, so the manager must follow.
+        self.workstreams.convo_transcript = await self.convo_reset()
+        await self.push(protocol.ConvoCleared())
+        log(logger, "convo_cleared")
 
     # ---- internals ----
 

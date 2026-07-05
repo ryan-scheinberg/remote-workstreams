@@ -48,15 +48,11 @@ class Mute(BaseModel):
     muted: bool
 
 
-class PlanStint(BaseModel):
-    """Run the ephemeral stint planner over the conversation since the last marker."""
+class NewWorkstream(BaseModel):
+    """Plan a stint from the conversation since the last marker and launch it —
+    one button, no plan review on the phone."""
 
-    type: Literal["plan_stint"] = "plan_stint"
-
-
-class LaunchWorkstream(BaseModel):
-    type: Literal["launch_workstream"] = "launch_workstream"
-    plan_id: str
+    type: Literal["new_workstream"] = "new_workstream"
 
 
 class SendToWorkstream(BaseModel):
@@ -84,6 +80,12 @@ class Compact(BaseModel):
     type: Literal["compact"] = "compact"
 
 
+class ClearConvo(BaseModel):
+    """Replace the convo session with a brand-new one: fresh context, clean role-convo."""
+
+    type: Literal["clear_convo"] = "clear_convo"
+
+
 class Approval(BaseModel):
     type: Literal["approval"] = "approval"
     approval_id: str
@@ -95,12 +97,12 @@ ClientMessage = Annotated[
         Hello,
         TextInput,
         Mute,
-        PlanStint,
-        LaunchWorkstream,
+        NewWorkstream,
         SendToWorkstream,
         CheckIn,
         EndWorkstream,
         Compact,
+        ClearConvo,
         Approval,
     ],
     Field(discriminator="type"),
@@ -139,8 +141,6 @@ class WorkstreamCard(BaseModel):
     name: str
     title: str
     status: Literal["running", "gone"]
-    last_activity: str
-    tail: list[str]
 
 
 class Workstreams(BaseModel):
@@ -148,11 +148,10 @@ class Workstreams(BaseModel):
     workstreams: list[WorkstreamCard]
 
 
-class StintPlan(BaseModel):
-    type: Literal["stint_plan"] = "stint_plan"
-    plan_id: str
-    title: str
-    text: str
+class ConvoCleared(BaseModel):
+    """A fresh convo session is live; the client wipes its chat."""
+
+    type: Literal["convo_cleared"] = "convo_cleared"
 
 
 class ApprovalRequest(BaseModel):
@@ -169,7 +168,7 @@ class Error(BaseModel):
 
 
 ServerMessage = Annotated[
-    Union[Ready, State, Chat, SpeechEnd, Workstreams, StintPlan, ApprovalRequest, Error],
+    Union[Ready, State, Chat, SpeechEnd, Workstreams, ConvoCleared, ApprovalRequest, Error],
     Field(discriminator="type"),
 ]
 

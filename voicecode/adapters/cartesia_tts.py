@@ -15,9 +15,8 @@ from cartesia import AsyncCartesia
 
 from voicecode.adapters.tts import TTSAdapter
 
-# No default voice exists in the SDK; this is Cartesia's stock "Barbershop Man".
-# Swap via the voice_id constructor arg once Ryan picks a voice on the real account.
-DEFAULT_VOICE_ID = "a0e99841-438c-4a64-b679-ae501e7d6091"
+# Cartesia's "Skylar" — Ryan's pick.
+DEFAULT_VOICE_ID = "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4"
 DEFAULT_MODEL_ID = "sonic-3"
 
 

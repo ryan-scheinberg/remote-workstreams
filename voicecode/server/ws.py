@@ -119,10 +119,8 @@ async def _handle(runtime: ConvoRuntime, conn: WSConnection, text: str) -> None:
     elif isinstance(msg, protocol.Mute):
         if runtime.pipeline is not None:
             runtime.pipeline.set_muted(msg.muted)
-    elif isinstance(msg, protocol.PlanStint):
-        runtime.plan_stint()
-    elif isinstance(msg, protocol.LaunchWorkstream):
-        runtime.launch_workstream(msg.plan_id)
+    elif isinstance(msg, protocol.NewWorkstream):
+        runtime.new_workstream()
     elif isinstance(msg, protocol.SendToWorkstream):
         runtime.send_to_workstream(msg.workstream)
     elif isinstance(msg, protocol.CheckIn):
@@ -131,6 +129,8 @@ async def _handle(runtime: ConvoRuntime, conn: WSConnection, text: str) -> None:
         runtime.end_workstream(msg.workstream)
     elif isinstance(msg, protocol.Compact):
         await runtime.compact()
+    elif isinstance(msg, protocol.ClearConvo):
+        runtime.clear_convo()
     elif isinstance(msg, protocol.Approval):
         runtime.approvals.resolve(msg.approval_id, msg.approved)
     else:  # a second Hello mid-connection

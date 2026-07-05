@@ -199,6 +199,8 @@ class Fakes:
         self.bridge = FakeConvoBridge()
         self.substrate = FakeSubstrate(tmp_path / "transcripts")
         self.pipelines: list[FakePipeline] = []
+        self.convo_resets = 0
+        self.fresh_transcript = tmp_path / "convo-fresh.jsonl"
 
     def stt_factory(self) -> FakeSTT:
         return FakeSTT()
@@ -210,6 +212,10 @@ class Fakes:
         pipeline = FakePipeline(stt, tts, convo, sink)
         self.pipelines.append(pipeline)
         return pipeline
+
+    async def convo_reset(self) -> Path:
+        self.convo_resets += 1
+        return self.fresh_transcript
 
 
 def seed_session(state, token: str = "cred-1") -> str:
@@ -233,6 +239,7 @@ def make_app(tmp_path: Path, fakes: Fakes, web_dir: Path | None = None):
         stt_factory=fakes.stt_factory,
         tts_factory=fakes.tts_factory,
         pipeline_factory=fakes.pipeline_factory,
+        convo_reset=fakes.convo_reset,
         approvals_token="boot-token",
         plugin_dir=tmp_path / "plugin",
         workstream_settings=tmp_path / "workstream-settings.json",

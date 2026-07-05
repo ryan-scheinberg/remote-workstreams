@@ -213,6 +213,46 @@ async def test_early_turn_close_leaves_fan_out_intact(tmp_path: Path) -> None:
     await asyncio.wait_for(asyncio.gather(run, sub), 1)
 
 
+async def test_reset_swaps_session_and_next_turn_speaks(tmp_path: Path) -> None:
+    """Clear: the tail follows the fresh transcript, the in-flight turn stream ends
+    quietly, and the next turn speaks its reply (no TurnEnd owed from the old file)."""
+    bridge, substrate, transcript = build(tmp_path)
+    run = asyncio.create_task(bridge.run())
+    seen: list[Entry] = []
+    sub = asyncio.create_task(collect(bridge.subscribe(), seen))
+    orphaned: list[str] = []
+    old_turn = asyncio.create_task(collect(bridge.turn("still there?"), orphaned))
+    await wait_for(lambda: substrate.sent == ["still there?"])
+
+    fresh = tmp_path / "convo-fresh.jsonl"
+    fresh.touch()
+    bridge.reset(
+        CCSession(
+            session_id="s-2",
+            window="voice:convo",
+            transcript=fresh,
+            spec=SessionSpec(name="convo", model="fable", effort="low", display_name="convo"),
+        )
+    )
+    await asyncio.wait_for(old_turn, 1)
+    assert orphaned == []
+
+    sentences: list[str] = []
+    turn = asyncio.create_task(collect(bridge.turn("hello again"), sentences))
+    await wait_for(lambda: substrate.sent == ["still there?", "hello again"])
+    append(transcript, assistant_line("A ghost from the killed session."))  # never read
+    append(fresh, assistant_line("Hello from the fresh session."), turn_end_line())
+    await asyncio.wait_for(turn, 1)
+
+    assert sentences == ["Hello from the fresh session."]
+    await wait_for(lambda: len(seen) == 2)  # fresh entries only, ghost dropped
+    assert seen[0] == AssistantText(text="Hello from the fresh session.", ts=TS)
+    assert bridge.history() == seen  # history reads the fresh transcript too
+
+    await bridge.close()
+    await asyncio.wait_for(asyncio.gather(run, sub), 1)
+
+
 async def test_send_and_slash_reach_substrate(tmp_path: Path) -> None:
     bridge, substrate, _ = build(tmp_path)
     await bridge.send("just so you know")
