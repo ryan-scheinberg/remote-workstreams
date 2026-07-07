@@ -166,6 +166,12 @@ class ConvoCleared(BaseModel):
     type: Literal["convo_cleared"] = "convo_cleared"
 
 
+class Compacted(BaseModel):
+    """The convo session finished a /compact; the client stops its spinner."""
+
+    type: Literal["compacted"] = "compacted"
+
+
 class ApprovalRequest(BaseModel):
     type: Literal["approval_request"] = "approval_request"
     approval_id: str
@@ -180,7 +186,17 @@ class Error(BaseModel):
 
 
 ServerMessage = Annotated[
-    Union[Ready, State, Chat, SpeechEnd, Workstreams, ConvoCleared, ApprovalRequest, Error],
+    Union[
+        Ready,
+        State,
+        Chat,
+        SpeechEnd,
+        Workstreams,
+        ConvoCleared,
+        Compacted,
+        ApprovalRequest,
+        Error,
+    ],
     Field(discriminator="type"),
 ]
 

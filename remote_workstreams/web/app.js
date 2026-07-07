@@ -181,7 +181,8 @@ function connect() {
     if (app.ws !== ws) return;
     app.ready = false;
     ui.setConnection("offline");
-    ui.planPending(false); // the pending workstream can't report back on a dead socket
+    ui.planPending(false); // pending work can't report back on a dead socket
+    ui.compactPending(false);
     scheduleReconnect();
   };
 }
@@ -241,6 +242,10 @@ function handleMessage(msg) {
       ui.clearChat();
       ui.toast("Fresh conversation.");
       break;
+    case "compacted":
+      ui.compactPending(false);
+      ui.toast("Compacted.");
+      break;
     case "approval_request":
       ui.addApproval(msg);
       break;
@@ -251,7 +256,8 @@ function handleMessage(msg) {
         ui.toast("Session expired — unlock again.", true);
         return;
       }
-      ui.planPending(false); // the pending workstream may be what errored
+      ui.planPending(false); // the pending work may be what errored
+      ui.compactPending(false);
       ui.toast(msg.message, true);
       break;
     default:

@@ -4,6 +4,7 @@ import pytest
 
 from remote_workstreams.transcript import (
     AssistantText,
+    CompactEnd,
     SessionVitals,
     ToolActivity,
     TranscriptTail,
@@ -127,6 +128,27 @@ def test_system_turn_duration_is_turn_end():
     assert parse_line(raw) == [TurnEnd(ts=TS)]
 
 
+def test_system_compact_boundary_is_compact_end():
+    raw = line(type="system", subtype="compact_boundary", timestamp=TS, content="Conversation compacted")
+    assert parse_line(raw) == [CompactEnd(ts=TS)]
+
+
+def test_compact_summary_is_not_chat():
+    # /compact writes the recap as a user line; it must never render as the user speaking.
+    raw = line(
+        type="user",
+        isCompactSummary=True,
+        message={"content": "This session is being continued from a previous conversation..."},
+    )
+    assert parse_line(raw) == []
+
+
+def test_typed_slash_command_echo_is_not_chat():
+    # The raw "/compact" user line the TUI records when a slash command is typed.
+    raw = line(type="user", message={"content": "/compact"})
+    assert parse_line(raw) == []
+
+
 def test_system_other_subtypes_skipped():
     raw = line(type="system", subtype="stop_hook_summary", timestamp=TS)
     assert parse_line(raw) == []
@@ -234,6 +256,22 @@ def test_vitals_context_pct_from_last_usage(tmp_path):
     vitals = vitals_from(tmp_path, prompt(), reply(usage=usage), turn_end())
     assert vitals.context_pct == 34  # 67_000 / 200_000
     assert vitals.state == "waiting"
+
+
+def test_vitals_compacting_shows_thinking_until_boundary(tmp_path):
+    """The live stuck-card sequence: a typed /compact lands as a bare user line
+    and compaction ends with a boundary, never a turn_duration."""
+    compacting = [prompt(), reply(), turn_end(), prompt("/compact")]
+    vitals = vitals_from(tmp_path, *compacting)
+    assert vitals.state == "thinking"  # compaction in progress
+    vitals = vitals_from(
+        tmp_path,
+        *compacting,
+        line(type="system", subtype="compact_boundary", compactMetadata={"postTokens": 9_000}),
+        line(type="user", isCompactSummary=True, message={"content": "This session is..."}),
+    )
+    assert vitals.state == "waiting"  # boundary ends it; the card goes green
+    assert vitals.context_pct == 4  # 9_000 / 200_000, rounded
 
 
 def test_vitals_compact_boundary_resets_context(tmp_path):

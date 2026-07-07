@@ -37,6 +37,7 @@ SERVER_MESSAGES = [
         convo_context_pct=17,
     ),
     protocol.ConvoCleared(),
+    protocol.Compacted(),
     protocol.ApprovalRequest(approval_id="a1", session="s1", tool="Bash", summary="rm -rf /tmp/x"),
     protocol.Error(message="nope"),
 ]

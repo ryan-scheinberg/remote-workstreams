@@ -39,7 +39,14 @@ class TurnEnd:
     ts: str
 
 
-Entry = UserText | AssistantText | ToolActivity | TurnEnd
+@dataclass(frozen=True)
+class CompactEnd:
+    """Claude Code writes a system/compact_boundary line when /compact finishes."""
+
+    ts: str
+
+
+Entry = UserText | AssistantText | ToolActivity | TurnEnd | CompactEnd
 
 
 def _tool_label(block: dict) -> str:
@@ -60,25 +67,31 @@ def parse_line(raw: str) -> list[Entry]:
 
     Meta line types (ai-title, file-history-snapshot, ...) and sidechain
     (subagent) lines fall through to []. system lines are skipped except
-    subtype turn_duration, which marks turn completion. User content that is
-    a list carries tool_result blocks, not chat; user strings starting with
-    "<" are local-command caveats / system-reminder wrappers.
+    subtype turn_duration (turn completion) and compact_boundary (/compact
+    completion). User content that is a list carries tool_result blocks, not
+    chat; user strings starting with "<" are local-command caveats /
+    system-reminder wrappers, "/" is a typed slash command's raw echo, and
+    isCompactSummary is compaction's synthetic recap — none of them are speech.
     """
     try:
         line = json.loads(raw)
     except ValueError:
         return []
-    if not isinstance(line, dict) or line.get("isSidechain"):
+    if not isinstance(line, dict) or line.get("isSidechain") or line.get("isCompactSummary"):
         return []
     ts = line.get("timestamp") or ""
     if line.get("type") == "system":
-        return [TurnEnd(ts=ts)] if line.get("subtype") == "turn_duration" else []
+        if line.get("subtype") == "turn_duration":
+            return [TurnEnd(ts=ts)]
+        if line.get("subtype") == "compact_boundary":
+            return [CompactEnd(ts=ts)]
+        return []
     message = line.get("message")
     if not isinstance(message, dict):
         return []
     content = message.get("content")
     if line.get("type") == "user":
-        if isinstance(content, str) and content and not content.startswith("<"):
+        if isinstance(content, str) and content and not content.startswith(("<", "/")):
             return [UserText(text=content, ts=ts)]
         return []
     if line.get("type") == "assistant" and isinstance(content, list):
@@ -199,6 +212,10 @@ class SessionVitals:
             if line.get("subtype") == "turn_duration":
                 self._thinking = False
             elif line.get("subtype") == "compact_boundary":
+                # Compaction ends here, never with a turn_duration — the typed
+                # "/compact" user line set thinking, so clear it or the card
+                # shows "compacting" forever.
+                self._thinking = False
                 post = (line.get("compactMetadata") or {}).get("postTokens")
                 if isinstance(post, int):
                     self._context_tokens = post

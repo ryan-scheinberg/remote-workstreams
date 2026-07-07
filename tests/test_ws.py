@@ -22,7 +22,7 @@ from remote_workstreams.protocol import (
     TextInput,
 )
 from remote_workstreams.server.runtime import ProtocolSink
-from remote_workstreams.transcript import AssistantText, ToolActivity, TurnEnd, UserText
+from remote_workstreams.transcript import AssistantText, CompactEnd, ToolActivity, TurnEnd, UserText
 
 
 @pytest.fixture
@@ -140,6 +140,14 @@ def test_history_replay_then_live_entries(client, fakes):
             "type": "chat", "role": "assistant", "text": "also: tests pass",
             "ts": "t5", "final": True,
         }
+
+
+def test_compact_end_pushes_compacted_not_chat(client, fakes):
+    fakes.bridge.history_entries = [CompactEnd(ts="t0")]  # stale: replay skips it
+    with client.websocket_connect("/ws") as ws:
+        assert hello(ws)["type"] == "ready"
+        fakes.bridge.push_entry(CompactEnd(ts="t1"))  # live: stops the spinner
+        assert json.loads(ws.receive_text()) == {"type": "compacted"}
 
 
 def test_text_input_flows_to_pipeline_and_bridge_turn(client, fakes):

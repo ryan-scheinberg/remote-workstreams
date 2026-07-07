@@ -65,7 +65,7 @@ export function init(h) {
     if (handlers.onNewWorkstream()) planPending(true);
   });
   confirmTap(els.compactBtn, () => {
-    if (handlers.onCompact()) toast("Compacting the conversation…");
+    if (handlers.onCompact()) compactPending(true); // spins until "compacted" arrives
   }, "Compact?");
   confirmTap(els.clearBtn, () => {
     if (handlers.onClearConvo()) toast("Starting a fresh conversation…");
@@ -231,6 +231,11 @@ function confirmTap(btn, fire, armedText) {
 export function planPending(on) {
   els.planBtn.classList.toggle("pending", on);
   els.planBtn.disabled = on;
+}
+
+export function compactPending(on) {
+  els.compactBtn.classList.toggle("pending", on);
+  els.compactBtn.disabled = on;
 }
 
 // The convo Compact button doubles as its context meter: "39%" idle, the verb

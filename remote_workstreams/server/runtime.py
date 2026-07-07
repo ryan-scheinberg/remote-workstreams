@@ -24,7 +24,7 @@ from remote_workstreams.audio.state import PipelineState
 from remote_workstreams.server.approvals import Approvals
 from remote_workstreams.server.logs import log
 from remote_workstreams.server.workstreams import WorkstreamManager
-from remote_workstreams.transcript import AssistantText, Entry, ToolActivity, UserText
+from remote_workstreams.transcript import AssistantText, CompactEnd, Entry, ToolActivity, UserText
 
 logger = logging.getLogger("remote_workstreams.server.runtime")
 
@@ -240,6 +240,9 @@ class ConvoRuntime:
 
     async def _fan_out(self) -> None:
         async for entry in self.bridge.subscribe():
+            if isinstance(entry, CompactEnd):
+                await self.push(protocol.Compacted())  # stops the phone's spinner
+                continue
             chat = entry_chat(entry)
             if chat is not None:
                 await self.push(chat)
