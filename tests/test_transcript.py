@@ -4,6 +4,7 @@ import pytest
 
 from remote_workstreams.transcript import (
     AssistantText,
+    SessionVitals,
     ToolActivity,
     TranscriptTail,
     TurnEnd,
@@ -168,3 +169,137 @@ def test_tail_holds_partial_last_line(tmp_path):
     with path.open("a") as f:
         f.write(partial[10:] + "\n")
     assert tail.read_new() == [UserText(text="still writing", ts="")]
+
+
+# ---- SessionVitals ----
+
+
+def prompt(text="do the thing"):
+    return line(type="user", message={"content": text})
+
+
+def reply(text="on it", usage=None, **fields):
+    message = {"content": [{"type": "text", "text": text}]}
+    if usage is not None:
+        message["usage"] = usage
+    return line(type="assistant", message=message, **fields)
+
+
+def turn_end():
+    return line(type="system", subtype="turn_duration", durationMs=1)
+
+
+def agent_call(tool_id, name="Agent"):
+    return line(
+        type="assistant",
+        message={"content": [{"type": "tool_use", "id": tool_id, "name": name, "input": {}}]},
+    )
+
+
+def agent_result(tool_id, text="done: shipped"):
+    return line(
+        type="user",
+        message={"content": [{"type": "tool_result", "tool_use_id": tool_id, "content": text}]},
+    )
+
+
+def vitals_from(tmp_path, *lines):
+    path = tmp_path / "v.jsonl"
+    path.write_text("".join(raw + "\n" for raw in lines))
+    vitals = SessionVitals(path)
+    vitals.refresh()
+    return vitals
+
+
+def test_vitals_missing_file_is_waiting(tmp_path):
+    vitals = SessionVitals(tmp_path / "nope.jsonl")
+    vitals.refresh()
+    assert (vitals.state, vitals.active_agents, vitals.context_pct) == ("waiting", 0, None)
+
+
+def test_vitals_turn_in_flight_then_waiting(tmp_path):
+    vitals = vitals_from(tmp_path, prompt(), reply())
+    assert vitals.state == "thinking"
+    vitals = vitals_from(tmp_path, prompt(), reply(), turn_end())
+    assert vitals.state == "waiting"
+
+
+def test_vitals_context_pct_from_last_usage(tmp_path):
+    usage = {
+        "input_tokens": 2,
+        "cache_read_input_tokens": 60_000,
+        "cache_creation_input_tokens": 6_000,
+        "output_tokens": 998,
+    }
+    vitals = vitals_from(tmp_path, prompt(), reply(usage=usage), turn_end())
+    assert vitals.context_pct == 34  # 67_000 / 200_000
+    assert vitals.state == "waiting"
+
+
+def test_vitals_compact_boundary_resets_context(tmp_path):
+    vitals = vitals_from(
+        tmp_path,
+        reply(usage={"input_tokens": 180_000}),
+        turn_end(),
+        line(type="system", subtype="compact_boundary", compactMetadata={"postTokens": 12_000}),
+        line(type="user", isCompactSummary=True, message={"content": "This session is..."}),
+    )
+    assert vitals.context_pct == 6
+    assert vitals.state == "waiting"  # the compact summary is not a new prompt
+
+
+def test_vitals_foreground_agent_counts_until_result(tmp_path):
+    vitals = vitals_from(tmp_path, prompt(), agent_call("t1"), agent_call("t2"))
+    assert vitals.active_agents == 2
+    vitals = vitals_from(tmp_path, prompt(), agent_call("t1"), agent_call("t2"), agent_result("t1"))
+    assert vitals.active_agents == 1
+
+
+def test_vitals_background_agent_survives_ack_until_notification(tmp_path):
+    ack = agent_result("t1", "Async agent launched successfully.\nagentId: abc123")
+    vitals = vitals_from(tmp_path, prompt(), agent_call("t1"), ack, turn_end())
+    assert vitals.active_agents == 1
+    assert vitals.state == "waiting"  # runs on while the main agent idles
+    notification = line(
+        type="user",
+        message={
+            "content": "<task-notification>\n<task-id>abc123</task-id>"
+            "\n<tool-use-id>t1</tool-use-id>\n<status>completed</status>"
+        },
+    )
+    vitals = vitals_from(tmp_path, prompt(), agent_call("t1"), ack, turn_end(), notification)
+    assert vitals.active_agents == 0
+    assert vitals.state == "waiting"  # the notification line is not a prompt
+
+
+def test_vitals_api_error_holds_until_recovery(tmp_path):
+    vitals = vitals_from(tmp_path, prompt(), reply(isApiErrorMessage=True))
+    assert vitals.state == "error"
+    vitals = vitals_from(tmp_path, prompt(), reply(isApiErrorMessage=True), reply())
+    assert vitals.state == "thinking"  # a successful line clears it
+    vitals = vitals_from(tmp_path, prompt(), reply(isApiErrorMessage=True), prompt())
+    assert vitals.state == "thinking"  # so does a fresh prompt
+
+
+def test_vitals_sidechain_and_garbage_ignored(tmp_path):
+    vitals = vitals_from(
+        tmp_path,
+        prompt(),
+        line(type="assistant", isSidechain=True, message={"content": [{"type": "text", "text": "x"}]}),
+        "{not json",
+        turn_end(),
+    )
+    assert vitals.state == "waiting"
+
+
+def test_vitals_incremental_holds_partial_last_line(tmp_path):
+    path = tmp_path / "v.jsonl"
+    vitals = SessionVitals(path)
+    partial = turn_end()
+    path.write_text(prompt() + "\n" + partial[:5])
+    vitals.refresh()
+    assert vitals.state == "thinking"
+    with path.open("a") as f:
+        f.write(partial[5:] + "\n")
+    vitals.refresh()
+    assert vitals.state == "waiting"

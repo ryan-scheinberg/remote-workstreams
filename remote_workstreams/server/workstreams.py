@@ -18,7 +18,7 @@ from remote_workstreams import protocol
 from remote_workstreams.server.logs import log
 from remote_workstreams.server.store import Store
 from remote_workstreams.substrate import CCSession, SessionSpec, Substrate
-from remote_workstreams.transcript import AssistantText, TranscriptTail
+from remote_workstreams.transcript import AssistantText, SessionVitals, TranscriptTail
 
 logger = logging.getLogger("remote_workstreams.server.workstreams")
 
@@ -43,6 +43,7 @@ def _title(plan_text: str) -> str:
 class _Workstream:
     session: CCSession
     title: str
+    vitals: SessionVitals
     status: str = "running"
 
 
@@ -71,13 +72,14 @@ class WorkstreamManager:
         self._poll_interval = poll_interval
         self._poll_budget = poll_budget
         self._push_interval = push_interval
+        self._convo_vitals = SessionVitals(convo_transcript)
         self._workstreams: dict[str, _Workstream] = {}
         for row in store.list_workstreams():
             transcript = substrate.transcript_dir / f"{row.cc_session_id}.jsonl"
             spec = self._workstream_spec(row.name, row.title)
             session = CCSession(row.cc_session_id, row.window, transcript, spec)
             self._workstreams[row.name] = _Workstream(
-                session=session, title=row.title, status=row.status
+                session=session, title=row.title, vitals=SessionVitals(transcript), status=row.status
             )
 
     def transcript_path(self, name: str) -> Path | None:
@@ -119,7 +121,9 @@ class WorkstreamManager:
             return
         await self.substrate.send(session, text)  # the full plan is the first message
         self.store.add_workstream(name, session.session_id, session.window, title, str(output))
-        self._workstreams[name] = _Workstream(session=session, title=title)
+        self._workstreams[name] = _Workstream(
+            session=session, title=title, vitals=SessionVitals(session.transcript)
+        )
         log(logger, "workstream_launched", name=name, cc_session_id=session.session_id)
         await self.push_cards()
 
@@ -163,22 +167,47 @@ class WorkstreamManager:
         self.store.set_marker(current)
         log(logger, "workstream_injected", name=name)
 
+    async def compact_workstream(self, name: str) -> None:
+        ws = self._workstreams.get(name)
+        if ws is None:
+            await self.notify(protocol.Error(message=f"unknown workstream: {name}"))
+            return
+        await self.substrate.slash(ws.session, "/compact")
+        log(logger, "workstream_compacted", name=name)
+
     async def run(self) -> None:
-        """Push workstream cards every push_interval while any exist."""
+        """Push cards every push_interval — even with no workstreams, the message
+        carries the convo session's context fill for the Compact button."""
         while True:
             await asyncio.sleep(self._push_interval)
-            if self._workstreams:
-                await self.push_cards()
+            await self.push_cards()
 
     async def push_cards(self) -> None:
+        if self._convo_vitals.path != self.convo_transcript:  # Clear re-pointed it
+            self._convo_vitals = SessionVitals(self.convo_transcript)
+        self._convo_vitals.refresh()
         cards = []
         for name, ws in self._workstreams.items():
             status = "running" if await self.substrate.alive(ws.session) else "gone"
             if status != ws.status:
                 ws.status = status
                 self.store.set_workstream_status(name, status)
-            cards.append(protocol.WorkstreamCard(name=name, title=ws.title, status=status))
-        await self.notify(protocol.Workstreams(workstreams=cards))
+            ws.vitals.refresh()
+            cards.append(
+                protocol.WorkstreamCard(
+                    name=name,
+                    title=ws.title,
+                    status=status,
+                    state=ws.vitals.state,
+                    agents=ws.vitals.active_agents,
+                    context_pct=ws.vitals.context_pct,
+                )
+            )
+        await self.notify(
+            protocol.Workstreams(
+                workstreams=cards, convo_context_pct=self._convo_vitals.context_pct
+            )
+        )
 
     def _workstream_spec(self, name: str, title: str) -> SessionSpec:
         return SessionSpec(

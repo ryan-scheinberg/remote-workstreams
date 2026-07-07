@@ -218,6 +218,9 @@ class ConvoRuntime:
     async def compact(self) -> None:
         await self.bridge.slash("/compact")
 
+    def compact_workstream(self, name: str) -> None:
+        self._background(self.workstreams.compact_workstream(name))
+
     def clear_convo(self) -> None:
         self._background(self._clear_convo())
 

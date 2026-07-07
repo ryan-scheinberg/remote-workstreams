@@ -12,6 +12,7 @@ CLIENT_MESSAGES = [
     protocol.CheckIn(workstream="ws-auth"),
     protocol.EndWorkstream(workstream="ws-auth"),
     protocol.Compact(),
+    protocol.CompactWorkstream(workstream="ws-auth"),
     protocol.ClearConvo(),
     protocol.Approval(approval_id="a1", approved=True),
 ]
@@ -24,8 +25,16 @@ SERVER_MESSAGES = [
     protocol.SpeechEnd(),
     protocol.Workstreams(
         workstreams=[
-            protocol.WorkstreamCard(name="ws-auth", title="Wire the auth flow", status="running")
-        ]
+            protocol.WorkstreamCard(
+                name="ws-auth",
+                title="Wire the auth flow",
+                status="running",
+                state="thinking",
+                agents=2,
+                context_pct=41,
+            )
+        ],
+        convo_context_pct=17,
     ),
     protocol.ConvoCleared(),
     protocol.ApprovalRequest(approval_id="a1", session="s1", tool="Bash", summary="rm -rf /tmp/x"),

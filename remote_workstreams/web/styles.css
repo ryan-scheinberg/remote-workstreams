@@ -376,8 +376,6 @@ button {
   border-radius: 50%;
   background: var(--faint);
 }
-.ws.running .ws-dot { background: var(--teal); box-shadow: 0 0 8px var(--teal); }
-.ws.gone .ws-dot { background: var(--gray); }
 
 .ws-end {
   flex: none;
@@ -397,11 +395,32 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ws.gone .ws-title { color: var(--dim); }
+
+/* name + dot carry the session state: green waiting, blue waiting with
+   subagents, amber mid-turn, red errored / gone */
+.ws[data-tone="green"] .ws-title { color: var(--teal); }
+.ws[data-tone="blue"] .ws-title { color: var(--blue); }
+.ws[data-tone="amber"] .ws-title { color: var(--amber); }
+.ws[data-tone="red"] .ws-title { color: var(--danger); }
+.ws[data-tone="green"] .ws-dot { background: var(--teal); box-shadow: 0 0 8px var(--teal); }
+.ws[data-tone="blue"] .ws-dot { background: var(--blue); box-shadow: 0 0 8px var(--blue); }
+.ws[data-tone="amber"] .ws-dot { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+.ws[data-tone="red"] .ws-dot { background: var(--danger); }
+
+.ws-agents {
+  flex: none;
+  min-width: 20px;
+  padding: 2px 6px;
+  text-align: center;
+  font-size: 10px;
+  border-radius: 9px;
+  color: var(--blue);
+  border: 1px solid color-mix(in srgb, var(--blue) 40%, transparent);
+}
 
 .ws-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 8px;
   margin-top: 10px;
 }
@@ -412,8 +431,22 @@ button {
   font-size: 12px;
   letter-spacing: 0.04em;
   color: var(--dim);
+  overflow: hidden;
+  white-space: nowrap;
 }
 .ws-actions button:active { background: var(--elev-2); color: var(--text); }
+.ws-send.armed {
+  color: var(--blue);
+  border-color: color-mix(in srgb, var(--blue) 50%, transparent);
+}
+.ws-check.armed {
+  color: var(--teal);
+  border-color: color-mix(in srgb, var(--teal) 45%, transparent);
+}
+.ws-compact.armed {
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 45%, transparent);
+}
 
 /* ---------- action bar ---------- */
 

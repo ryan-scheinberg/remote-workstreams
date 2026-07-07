@@ -42,6 +42,7 @@ ui.init({
   onClearConvo: () => send({ type: "clear_convo" }),
   onSendToWorkstream: (name) => send({ type: "send_to_workstream", workstream: name }),
   onCheckIn: (name) => send({ type: "check_in", workstream: name }),
+  onCompactWorkstream: (name) => send({ type: "compact_workstream", workstream: name }),
   onEndWorkstream: (name) => send({ type: "end_workstream", workstream: name }),
   onApproval: (approvalId, approved) => send({ type: "approval", approval_id: approvalId, approved }),
 });
@@ -234,6 +235,7 @@ function handleMessage(msg) {
       break;
     case "workstreams":
       ui.renderWorkstreams(msg.workstreams);
+      ui.setConvoContext(msg.convo_context_pct);
       break;
     case "convo_cleared":
       ui.clearChat();

@@ -1,4 +1,5 @@
 import asyncio
+import json
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,15 @@ from remote_workstreams.server.store import Store
 from remote_workstreams.server.workstreams import WorkstreamManager
 
 PLAN_TEXT = "Stint: Wire the auth flow\n\nGoal: ship it.\n"
+
+
+def transcript_line(**fields) -> str:
+    return json.dumps(fields) + "\n"
+
+
+def append_transcript(path: Path, *lines: str) -> None:
+    with path.open("a") as f:
+        f.writelines(lines)
 
 
 class Notify:
@@ -210,6 +220,77 @@ async def test_cards_track_window_aliveness(rig):
     (card,) = notify.messages[-1].workstreams
     assert card.status == "gone"
     assert store.list_workstreams()[0].status == "gone"
+
+
+async def test_cards_carry_vitals_from_the_transcript(rig):
+    manager, store, substrate, notify, tmp_path = rig
+    await launch(rig)
+    session = substrate.spawned[-1]
+
+    # The fake's greeting has no turn_duration yet: the session is mid-turn.
+    append_transcript(
+        session.transcript,
+        transcript_line(
+            type="assistant",
+            message={
+                "usage": {"input_tokens": 2, "cache_read_input_tokens": 79_998},
+                "content": [{"type": "tool_use", "id": "t1", "name": "Agent", "input": {}}],
+            },
+        ),
+    )
+    await manager.push_cards()
+    (card,) = notify.messages[-1].workstreams
+    assert (card.state, card.agents, card.context_pct) == ("thinking", 1, 40)
+
+    append_transcript(
+        session.transcript,
+        transcript_line(
+            type="user",
+            message={"content": [{"type": "tool_result", "tool_use_id": "t1", "content": "done"}]},
+        ),
+        transcript_line(type="system", subtype="turn_duration", durationMs=1),
+    )
+    await manager.push_cards()
+    (card,) = notify.messages[-1].workstreams
+    assert (card.state, card.agents) == ("waiting", 0)
+
+
+async def test_push_carries_convo_context_pct_and_follows_repointing(rig):
+    manager, store, substrate, notify, tmp_path = rig
+    (tmp_path / "convo.jsonl").write_text(
+        transcript_line(type="assistant", message={"usage": {"input_tokens": 20_000}, "content": []})
+    )
+    await manager.push_cards()
+    assert notify.messages[-1].convo_context_pct == 10
+
+    fresh = tmp_path / "convo-fresh.jsonl"  # Clear swaps the convo session
+    fresh.write_text(
+        transcript_line(type="assistant", message={"usage": {"input_tokens": 2_000}, "content": []})
+    )
+    manager.convo_transcript = fresh
+    await manager.push_cards()
+    assert notify.messages[-1].convo_context_pct == 1
+
+
+async def test_run_pushes_even_with_no_workstreams(rig):
+    manager, store, substrate, notify, tmp_path = rig
+    manager._push_interval = 0.02
+    task = asyncio.create_task(manager.run())
+    while not notify.messages:
+        await asyncio.sleep(0.005)
+    task.cancel()
+    assert notify.messages[-1].workstreams == []
+
+
+async def test_compact_workstream_types_slash_compact(rig):
+    manager, store, substrate, notify, tmp_path = rig
+    await launch(rig)
+    await manager.compact_workstream("ws-wire-the-auth-flow")
+    assert substrate.sent[-1] == ("voice:ws-wire-the-auth-flow", "/compact")
+
+    await manager.compact_workstream("ws-nope")
+    error = notify.messages[-1]
+    assert error.type == "error" and "unknown workstream" in error.message
 
 
 async def test_manager_rehydrates_from_store(rig):

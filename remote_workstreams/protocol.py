@@ -80,6 +80,13 @@ class Compact(BaseModel):
     type: Literal["compact"] = "compact"
 
 
+class CompactWorkstream(BaseModel):
+    """Type /compact into a workstream session to shrink its context."""
+
+    type: Literal["compact_workstream"] = "compact_workstream"
+    workstream: str
+
+
 class ClearConvo(BaseModel):
     """Replace the convo session with a brand-new one: fresh context, clean role-convo."""
 
@@ -102,6 +109,7 @@ ClientMessage = Annotated[
         CheckIn,
         EndWorkstream,
         Compact,
+        CompactWorkstream,
         ClearConvo,
         Approval,
     ],
@@ -141,11 +149,15 @@ class WorkstreamCard(BaseModel):
     name: str
     title: str
     status: Literal["running", "gone"]
+    state: Literal["waiting", "thinking", "error"] = "waiting"  # from the transcript
+    agents: int = 0  # subagents currently running
+    context_pct: int | None = None  # context fill; None until first usage lands
 
 
 class Workstreams(BaseModel):
     type: Literal["workstreams"] = "workstreams"
     workstreams: list[WorkstreamCard]
+    convo_context_pct: int | None = None  # the convo session's fill, for its Compact button
 
 
 class ConvoCleared(BaseModel):

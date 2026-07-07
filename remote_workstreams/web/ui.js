@@ -66,7 +66,7 @@ export function init(h) {
   });
   confirmTap(els.compactBtn, () => {
     if (handlers.onCompact()) toast("Compacting the conversation…");
-  });
+  }, "Compact?");
   confirmTap(els.clearBtn, () => {
     if (handlers.onClearConvo()) toast("Starting a fresh conversation…");
   });
@@ -200,21 +200,26 @@ function sendComposer() {
 
 // ---- action bar ----
 
-// Every action-bar button confirms the same way: first tap arms (accented
-// label + "?"), a second within 2.6s fires, untouched it disarms itself.
-function confirmTap(btn, fire) {
-  const label = btn.querySelector(".label");
-  const idle = label.textContent;
+// Every button confirms the same way: first tap arms (accented label + "?"),
+// a second within 2.6s fires, untouched it disarms itself. Idle text is
+// captured at arm time — labels may change while idle (the compact buttons
+// show context %); armedText overrides the default `${idle}?` when the idle
+// label doesn't name the action.
+function confirmTap(btn, fire, armedText) {
+  const label = btn.querySelector(".label") || btn;
+  let idle = null; // non-null while armed
   let timer = 0;
   const disarm = () => {
     clearTimeout(timer);
     btn.classList.remove("armed");
-    label.textContent = idle;
+    if (idle !== null) label.textContent = idle;
+    idle = null;
   };
   btn.addEventListener("click", () => {
-    if (!btn.classList.contains("armed")) {
+    if (idle === null) {
+      idle = label.textContent;
       btn.classList.add("armed");
-      label.textContent = `${idle}?`;
+      label.textContent = armedText || `${idle}?`;
       timer = setTimeout(disarm, 2600);
       return;
     }
@@ -228,27 +233,45 @@ export function planPending(on) {
   els.planBtn.disabled = on;
 }
 
+// The convo Compact button doubles as its context meter: "39%" idle, the verb
+// only appears when armed.
+export function setConvoContext(pct) {
+  if (els.compactBtn.classList.contains("armed")) return; // next push refreshes it
+  els.compactBtn.querySelector(".label").textContent = pct == null ? "Compact" : `${pct}%`;
+}
+
 // ---- workstream pager: one card visible, swipe sideways for the others ----
 
 let wsSnapshot = ""; // skip re-rendering unchanged cards: pushes come every 5s
+
+// The name's color carries the session's state: green waiting, blue waiting
+// with subagents running, amber mid-turn, red errored or window gone.
+function tone(ws) {
+  if (ws.status === "gone" || ws.state === "error") return "red";
+  if (ws.state === "thinking") return "amber";
+  return ws.agents > 0 ? "blue" : "green";
+}
 
 export function renderWorkstreams(workstreams) {
   const added = workstreams.length > wsCount;
   if (added) planPending(false); // the launched workstream is the "done" signal
   wsCount = workstreams.length;
 
-  const snap = JSON.stringify(workstreams.map((ws) => [ws.name, ws.title, ws.status]));
-  if (snap === wsSnapshot) return; // rebuilding would kill swipe position + armed ✕
+  const snap = JSON.stringify(
+    workstreams.map((ws) => [ws.name, ws.title, ws.status, ws.state, ws.agents, ws.context_pct])
+  );
+  if (snap === wsSnapshot) return; // rebuilding would kill swipe position + armed buttons
   wsSnapshot = snap;
 
   const chatPinned = pinned(els.chat); // cards below shrink the chat viewport
   const keepScroll = els.workstreams.scrollLeft;
   els.workstreams.replaceChildren(); // empty list renders nothing at all
   for (const ws of workstreams) {
-    // Compact card: status dot + a clear name + the two controls. Nothing else.
+    // Compact card: status dot + a state-colored name + the controls. Nothing else.
     const label = (ws.title || ws.name).slice(0, 40);
     const card = document.createElement("article");
     card.className = `ws ${ws.status}`;
+    card.dataset.tone = tone(ws);
 
     const head = document.createElement("div");
     head.className = "ws-head";
@@ -257,39 +280,46 @@ export function renderWorkstreams(workstreams) {
     const title = document.createElement("span");
     title.className = "ws-title";
     title.textContent = label;
+    head.append(dot, title);
+    if (ws.agents > 0) {
+      const agents = document.createElement("span");
+      agents.className = "ws-agents";
+      agents.textContent = ws.agents;
+      agents.setAttribute("aria-label", `${ws.agents} subagents running`);
+      head.append(agents);
+    }
     const end = document.createElement("button");
     end.className = "ws-end";
     end.textContent = "✕";
     end.setAttribute("aria-label", `End ${label}`);
-    end.addEventListener("click", () => {
-      // Arm-then-confirm: ending kills a live session.
-      if (!end.classList.contains("armed")) {
-        end.classList.add("armed");
-        end.textContent = "End?";
-        setTimeout(() => {
-          end.classList.remove("armed");
-          end.textContent = "✕";
-        }, 3000);
-        return;
-      }
+    confirmTap(end, () => {
       if (handlers.onEndWorkstream(ws.name)) toast(`Ended ${label}.`);
-    });
-    head.append(dot, title, end);
+    }, "End?");
+    head.append(end);
     card.append(head);
 
     const actions = document.createElement("div");
     actions.className = "ws-actions";
     const sendBtn = document.createElement("button");
+    sendBtn.className = "ws-send";
     sendBtn.textContent = "Send latest";
-    sendBtn.addEventListener("click", () => {
+    confirmTap(sendBtn, () => {
       if (handlers.onSendToWorkstream(ws.name)) toast(`Routing the latest to ${label}…`);
     });
     const checkBtn = document.createElement("button");
+    checkBtn.className = "ws-check";
     checkBtn.textContent = "Check in";
-    checkBtn.addEventListener("click", () => {
+    confirmTap(checkBtn, () => {
       if (handlers.onCheckIn(ws.name)) toast(`Checking in on ${label}…`);
     });
-    actions.append(sendBtn, checkBtn);
+    // Doubles as the context meter, like the convo Compact button.
+    const compactBtn = document.createElement("button");
+    compactBtn.className = "ws-compact";
+    compactBtn.textContent = ws.context_pct == null ? "Compact" : `${ws.context_pct}%`;
+    confirmTap(compactBtn, () => {
+      if (handlers.onCompactWorkstream(ws.name)) toast(`Compacting ${label}…`);
+    }, "Compact?");
+    actions.append(sendBtn, checkBtn, compactBtn);
     card.append(actions);
 
     els.workstreams.append(card);

@@ -14,6 +14,7 @@ from remote_workstreams.protocol import (
     CheckIn,
     ClearConvo,
     Compact,
+    CompactWorkstream,
     Hello,
     Mute,
     NewWorkstream,
@@ -191,6 +192,9 @@ class RecordingManager:
     async def send_to_workstream(self, name: str) -> None:
         self.calls.append(("send_to_workstream", name))
 
+    async def compact_workstream(self, name: str) -> None:
+        self.calls.append(("compact_workstream", name))
+
     def transcript_path(self, name: str) -> Path | None:
         return Path(f"/transcripts/{name}.jsonl") if name == "ws-known" else None
 
@@ -203,6 +207,7 @@ def test_buttons_reach_manager_compact_reaches_bridge(client, fakes):
         ws.send_text(NewWorkstream().model_dump_json())
         ws.send_text(SendToWorkstream(workstream="ws-auth").model_dump_json())
         ws.send_text(Compact().model_dump_json())
+        ws.send_text(CompactWorkstream(workstream="ws-auth").model_dump_json())
         ws.send_text(CheckIn(workstream="ws-known").model_dump_json())
         # check_in speaks through the pipeline: consume its turn frames
         assert json.loads(ws.receive_text())["state"] == "thinking"
@@ -210,10 +215,11 @@ def test_buttons_reach_manager_compact_reaches_bridge(client, fakes):
         assert json.loads(ws.receive_text())["type"] == "speech_end"
         assert json.loads(ws.receive_text())["state"] == "listening"
 
-        wait_for(lambda: len(manager.calls) == 2)
+        wait_for(lambda: len(manager.calls) == 3)
         assert manager.calls == [
             ("new_workstream",),
             ("send_to_workstream", "ws-auth"),
+            ("compact_workstream", "ws-auth"),
         ]
         assert fakes.bridge.slashes == ["/compact"]
         directive = fakes.pipelines[-1].texts[-1]
