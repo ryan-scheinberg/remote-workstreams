@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from remote_workstreams import protocol
+from remote_workstreams.bootstrap import CONVO_MODEL
 from remote_workstreams.server.logs import log
 from remote_workstreams.server.store import Store
 from remote_workstreams.substrate import CCSession, SessionSpec, Substrate
@@ -23,6 +24,8 @@ from remote_workstreams.transcript import AssistantText, SessionVitals, Transcri
 logger = logging.getLogger("remote_workstreams.server.workstreams")
 
 # Session roster: ephemeral passthroughs think hard, workstreams execute.
+# WORKSTREAM_MODEL is only the default — the settings menu's pick (in the store)
+# wins for new spawns; effort is fixed regardless of model.
 PLANNER_MODEL, PLANNER_EFFORT = "opus", "high"
 INJECTOR_MODEL, INJECTOR_EFFORT = "opus", "high"
 WORKSTREAM_MODEL, WORKSTREAM_EFFORT = "fable", "xhigh"
@@ -44,6 +47,7 @@ class _Workstream:
     session: CCSession
     title: str
     vitals: SessionVitals
+    model: str
     status: str = "running"
 
 
@@ -76,10 +80,11 @@ class WorkstreamManager:
         self._workstreams: dict[str, _Workstream] = {}
         for row in store.list_workstreams():
             transcript = substrate.transcript_dir / f"{row.cc_session_id}.jsonl"
-            spec = self._workstream_spec(row.name, row.title)
+            spec = self._workstream_spec(row.name, row.title, row.model)
             session = CCSession(row.cc_session_id, row.window, transcript, spec)
             self._workstreams[row.name] = _Workstream(
-                session=session, title=row.title, vitals=SessionVitals(transcript), status=row.status
+                session=session, title=row.title, vitals=SessionVitals(transcript),
+                model=row.model, status=row.status,
             )
 
     def transcript_path(self, name: str) -> Path | None:
@@ -114,15 +119,16 @@ class WorkstreamManager:
         title = _title(text)
         name = f"ws-{_slug(title)}"
         log(logger, "stint_planned", plan_id=plan_id, title=title)
-        session = await self.substrate.spawn(self._workstream_spec(name, title))
+        model = self.workstream_model()
+        session = await self.substrate.spawn(self._workstream_spec(name, title, model))
         if not await self._await_ready(session):
             await self.substrate.kill(session)
             await self.notify(protocol.Error(message="workstream session failed to start"))
             return
         await self.substrate.send(session, text)  # the full plan is the first message
-        self.store.add_workstream(name, session.session_id, session.window, title, str(output))
+        self.store.add_workstream(name, session.session_id, session.window, title, str(output), model)
         self._workstreams[name] = _Workstream(
-            session=session, title=title, vitals=SessionVitals(session.transcript)
+            session=session, title=title, vitals=SessionVitals(session.transcript), model=model
         )
         log(logger, "workstream_launched", name=name, cc_session_id=session.session_id)
         await self.push_cards()
@@ -201,18 +207,32 @@ class WorkstreamManager:
                     state=ws.vitals.state,
                     agents=ws.vitals.active_agents,
                     context_pct=ws.vitals.context_pct,
+                    model=ws.model,
                 )
             )
         await self.notify(
             protocol.Workstreams(
-                workstreams=cards, convo_context_pct=self._convo_vitals.context_pct
+                workstreams=cards,
+                convo_context_pct=self._convo_vitals.context_pct,
+                convo_model=self.convo_model(),
+                workstream_model=self.workstream_model(),
             )
         )
 
-    def _workstream_spec(self, name: str, title: str) -> SessionSpec:
+    def convo_model(self) -> str:
+        return self.store.get_setting("convo_model") or CONVO_MODEL
+
+    def workstream_model(self) -> str:
+        return self.store.get_setting("workstream_model") or WORKSTREAM_MODEL
+
+    def set_model(self, target: str, model: str) -> None:
+        self.store.set_setting(f"{target}_model", model)
+        log(logger, "model_set", target=target, model=model)
+
+    def _workstream_spec(self, name: str, title: str, model: str) -> SessionSpec:
         return SessionSpec(
             name=name,
-            model=WORKSTREAM_MODEL,
+            model=model,
             effort=WORKSTREAM_EFFORT,
             display_name=title,
             settings_file=self._settings_file,

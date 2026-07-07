@@ -65,8 +65,9 @@ async def launch(rig, plan_text=PLAN_TEXT):
     """Run new_workstream end-to-end, standing in for the planner; returns the
     plan path. The workstream session is substrate.spawned[-1]."""
     manager, store, substrate, notify, tmp_path = rig
+    already = len(substrate.spawned)
     task = asyncio.create_task(manager.new_workstream())
-    await wait_for_spawn(substrate)
+    await wait_for_spawn(substrate, count=already + 1)
     plan = output_path(substrate.spawned[-1].spec)
     plan.write_text(plan_text)
     await task
@@ -113,9 +114,10 @@ async def test_new_workstream_plans_then_launches(rig):
 
     (cards,) = notify.messages
     assert cards.type == "workstreams"
+    assert (cards.convo_model, cards.workstream_model) == ("fable", "fable")  # defaults
     (card,) = cards.workstreams
-    assert (card.name, card.title, card.status) == (
-        "ws-wire-the-auth-flow", "Wire the auth flow", "running",
+    assert (card.name, card.title, card.status, card.model) == (
+        "ws-wire-the-auth-flow", "Wire the auth flow", "running", "fable",
     )
 
 
@@ -293,6 +295,21 @@ async def test_compact_workstream_types_slash_compact(rig):
     assert error.type == "error" and "unknown workstream" in error.message
 
 
+async def test_set_model_shapes_new_spawns_not_running_ones(rig):
+    manager, store, substrate, notify, tmp_path = rig
+    await launch(rig)  # launched before the pick: fable
+    manager.set_model("workstream", "opus")
+
+    await launch(rig, plan_text="Stint: Write the docs\n\nGoal: docs.\n")
+    spec = substrate.spawned[-1].spec
+    assert (spec.model, spec.effort) == ("opus", "xhigh")  # effort is fixed per role
+
+    await manager.push_cards()
+    first, second = notify.messages[-1].workstreams
+    assert (first.model, second.model) == ("fable", "opus")  # the old card keeps its model
+    assert notify.messages[-1].workstream_model == "opus"
+
+
 async def test_manager_rehydrates_from_store(rig):
     manager, store, substrate, notify, tmp_path = rig
     await launch(rig)
@@ -312,6 +329,7 @@ async def test_manager_rehydrates_from_store(rig):
     await manager2.push_cards()
     (card,) = notify.messages[-1].workstreams
     assert card.name == "ws-wire-the-auth-flow" and card.status == "running"
+    assert card.model == "fable"  # per-row model survives the restart
 
 
 async def test_run_pushes_cards_on_interval(rig):

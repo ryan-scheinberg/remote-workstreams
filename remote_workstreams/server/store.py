@@ -35,11 +35,16 @@ CREATE TABLE IF NOT EXISTS workstreams (
     title TEXT NOT NULL,
     plan_path TEXT NOT NULL,
     created_at REAL NOT NULL,
-    status TEXT NOT NULL
+    status TEXT NOT NULL,
+    model TEXT NOT NULL DEFAULT 'fable'
 );
 CREATE TABLE IF NOT EXISTS marker (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     last_line INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
 );
 DROP TABLE IF EXISTS sessions;
 DROP TABLE IF EXISTS transcript;
@@ -55,6 +60,7 @@ class WorkstreamRow:
     plan_path: str
     created_at: float
     status: str
+    model: str
 
 
 @dataclass
@@ -87,6 +93,11 @@ class Store:
             if columns and "webauthn_credential_id" not in columns:
                 self._conn.execute("DROP TABLE credentials")
             self._conn.executescript(_SCHEMA)
+            ws_columns = {row[1] for row in self._conn.execute("PRAGMA table_info(workstreams)")}
+            if "model" not in ws_columns:  # pre-model-picker rows were all fable
+                self._conn.execute(
+                    "ALTER TABLE workstreams ADD COLUMN model TEXT NOT NULL DEFAULT 'fable'"
+                )
             self._conn.commit()
 
     def close(self) -> None:
@@ -121,13 +132,13 @@ class Store:
     # ---- workstreams ----
 
     def add_workstream(
-        self, name: str, cc_session_id: str, window: str, title: str, plan_path: str
+        self, name: str, cc_session_id: str, window: str, title: str, plan_path: str, model: str
     ) -> None:
         self._write(
             "INSERT OR REPLACE INTO workstreams"
-            " (name, cc_session_id, window, title, plan_path, created_at, status)"
-            " VALUES (?, ?, ?, ?, ?, ?, 'running')",
-            (name, cc_session_id, window, title, plan_path, time.time()),
+            " (name, cc_session_id, window, title, plan_path, created_at, status, model)"
+            " VALUES (?, ?, ?, ?, ?, ?, 'running', ?)",
+            (name, cc_session_id, window, title, plan_path, time.time(), model),
         )
 
     def list_workstreams(self) -> list[WorkstreamRow]:
@@ -148,6 +159,15 @@ class Store:
 
     def set_marker(self, last_line: int) -> None:
         self._write("INSERT OR REPLACE INTO marker (id, last_line) VALUES (1, ?)", (last_line,))
+
+    # ---- settings (key/value: convo_model, workstream_model) ----
+
+    def get_setting(self, key: str) -> str | None:
+        row = self._fetchone("SELECT value FROM settings WHERE key = ?", (key,))
+        return row["value"] if row else None
+
+    def set_setting(self, key: str, value: str) -> None:
+        self._write("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
 
     # ---- credentials ----
 

@@ -13,6 +13,8 @@ CLIENT_MESSAGES = [
     protocol.EndWorkstream(workstream="ws-auth"),
     protocol.Compact(),
     protocol.CompactWorkstream(workstream="ws-auth"),
+    protocol.SetModel(target="convo", model="sonnet"),
+    protocol.SetModel(target="workstream", model="opus"),
     protocol.ClearConvo(),
     protocol.Approval(approval_id="a1", approved=True),
 ]
@@ -32,9 +34,12 @@ SERVER_MESSAGES = [
                 state="thinking",
                 agents=2,
                 context_pct=41,
+                model="opus",
             )
         ],
         convo_context_pct=17,
+        convo_model="sonnet",
+        workstream_model="fable",
     ),
     protocol.ConvoCleared(),
     protocol.Compacted(),
@@ -43,9 +48,16 @@ SERVER_MESSAGES = [
 ]
 
 
-@pytest.mark.parametrize("msg", CLIENT_MESSAGES, ids=lambda m: m.type)
+@pytest.mark.parametrize("msg", CLIENT_MESSAGES, ids=lambda m: f"{m.type}-{id(m)}")
 def test_client_message_roundtrip(msg):
     assert protocol.parse_client_message(msg.model_dump_json()) == msg
+
+
+def test_set_model_rejects_unknown_models_and_targets():
+    with pytest.raises(pydantic.ValidationError):
+        protocol.parse_client_message('{"type": "set_model", "target": "convo", "model": "gpt"}')
+    with pytest.raises(pydantic.ValidationError):
+        protocol.parse_client_message('{"type": "set_model", "target": "planner", "model": "opus"}')
 
 
 @pytest.mark.parametrize("msg", SERVER_MESSAGES, ids=lambda m: f"{m.type}-{id(m)}")

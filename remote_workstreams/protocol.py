@@ -87,6 +87,15 @@ class CompactWorkstream(BaseModel):
     workstream: str
 
 
+class SetModel(BaseModel):
+    """Pick a model from the settings menu. convo switches the live session;
+    workstream only affects future spawns (a running workstream keeps its model)."""
+
+    type: Literal["set_model"] = "set_model"
+    target: Literal["convo", "workstream"]
+    model: Literal["sonnet", "opus", "fable"]
+
+
 class ClearConvo(BaseModel):
     """Replace the convo session with a brand-new one: fresh context, clean role-convo."""
 
@@ -110,6 +119,7 @@ ClientMessage = Annotated[
         EndWorkstream,
         Compact,
         CompactWorkstream,
+        SetModel,
         ClearConvo,
         Approval,
     ],
@@ -152,12 +162,15 @@ class WorkstreamCard(BaseModel):
     state: Literal["waiting", "thinking", "error"] = "waiting"  # from the transcript
     agents: int = 0  # subagents currently running
     context_pct: int | None = None  # context fill; None until first usage lands
+    model: str = "fable"  # what it was launched with; immutable for its lifetime
 
 
 class Workstreams(BaseModel):
     type: Literal["workstreams"] = "workstreams"
     workstreams: list[WorkstreamCard]
     convo_context_pct: int | None = None  # the convo session's fill, for its Compact button
+    convo_model: str = "fable"  # current picks, so the settings menu shows them
+    workstream_model: str = "fable"
 
 
 class ConvoCleared(BaseModel):

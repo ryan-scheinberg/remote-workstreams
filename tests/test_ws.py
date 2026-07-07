@@ -19,6 +19,7 @@ from remote_workstreams.protocol import (
     Mute,
     NewWorkstream,
     SendToWorkstream,
+    SetModel,
     TextInput,
 )
 from remote_workstreams.server.runtime import ProtocolSink
@@ -203,6 +204,12 @@ class RecordingManager:
     async def compact_workstream(self, name: str) -> None:
         self.calls.append(("compact_workstream", name))
 
+    def set_model(self, target: str, model: str) -> None:
+        self.calls.append(("set_model", target, model))
+
+    async def push_cards(self) -> None:
+        self.calls.append(("push_cards",))
+
     def transcript_path(self, name: str) -> Path | None:
         return Path(f"/transcripts/{name}.jsonl") if name == "ws-known" else None
 
@@ -235,6 +242,23 @@ def test_buttons_reach_manager_compact_reaches_bridge(client, fakes):
             "Check in on workstream ws-known: read the tail of"
             " /transcripts/ws-known.jsonl and tell me where things stand."
         )
+
+
+def test_set_model_persists_and_convo_switches_live(client, fakes):
+    manager = RecordingManager()
+    client.app_state.runtime.workstreams = manager
+    with client.websocket_connect("/ws") as ws:
+        hello(ws)
+        ws.send_text(SetModel(target="convo", model="sonnet").model_dump_json())
+        ws.send_text(SetModel(target="workstream", model="opus").model_dump_json())
+        wait_for(lambda: manager.calls.count(("push_cards",)) == 2)
+    assert manager.calls == [
+        ("set_model", "convo", "sonnet"),
+        ("push_cards",),
+        ("set_model", "workstream", "opus"),
+        ("push_cards",),  # workstream picks apply at spawn: no slash, just persisted
+    ]
+    assert fakes.bridge.slashes == ["/model sonnet"]  # only the convo session switches live
 
 
 def test_clear_convo_resets_and_repoints_the_manager(client, fakes):

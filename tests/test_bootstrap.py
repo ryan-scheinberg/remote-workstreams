@@ -72,3 +72,15 @@ async def test_fresh_convo_with_nothing_stored_just_spawns(rig):
     session = await fresh_convo(store, substrate, PLUGIN_DIR)
     assert substrate.killed == []
     assert store.get_convo_session() == session.session_id
+
+
+async def test_stored_convo_model_shapes_spawns(rig):
+    store, substrate = rig
+    store.set_setting("convo_model", "sonnet")
+    session = await ensure_convo(store, substrate, PLUGIN_DIR)
+    assert (session.spec.model, session.spec.effort) == ("sonnet", "low")
+
+    substrate.alive_windows.clear()  # reboot: the resume respawn honors the pick too
+    session = await ensure_convo(store, substrate, PLUGIN_DIR)
+    assert session.spec.resume is True
+    assert session.spec.model == "sonnet"

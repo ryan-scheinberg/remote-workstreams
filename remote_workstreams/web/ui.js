@@ -4,8 +4,8 @@
 const $ = (id) => document.getElementById(id);
 
 const els = {
-  connDot: $("conn-dot"),
-  connLabel: $("conn-label"),
+  menuBtn: $("btn-menu"),
+  menu: $("menu"),
   stateChip: $("state-chip"),
   stateLabel: $("state-label"),
   lockBtn: $("btn-lock"),
@@ -71,8 +71,40 @@ export function init(h) {
     if (handlers.onClearConvo()) toast("Starting a fresh conversation…");
   });
   els.workstreams.addEventListener("scroll", updateWsDots, { passive: true });
+  els.menuBtn.addEventListener("click", () => {
+    const open = els.menu.hidden;
+    els.menu.hidden = !open;
+    els.menuBtn.setAttribute("aria-expanded", String(open));
+  });
+  els.menu.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-model]");
+    if (!btn) return;
+    const target = btn.closest(".menu-models").dataset.target;
+    if (handlers.onSetModel(target, btn.dataset.model)) markModel(target, btn.dataset.model);
+  });
+  document.addEventListener("click", (e) => {
+    if (els.menu.hidden || els.menu.contains(e.target) || els.menuBtn.contains(e.target)) return;
+    closeMenu();
+  });
   // Locking must be instant — no confirm tap.
   els.lockBtn.addEventListener("click", () => handlers.onLock());
+}
+
+// ---- settings menu ----
+
+function closeMenu() {
+  els.menu.hidden = true;
+  els.menuBtn.setAttribute("aria-expanded", "false");
+}
+
+function markModel(target, model) {
+  const seg = els.menu.querySelector(`.menu-models[data-target="${target}"]`);
+  for (const btn of seg.children) btn.classList.toggle("selected", btn.dataset.model === model);
+}
+
+export function setModels(convo, workstream) {
+  markModel("convo", convo);
+  markModel("workstream", workstream);
 }
 
 // ---- screens ----
@@ -89,6 +121,7 @@ export function showPairing(webauthnAvailable) {
 export function showLogin() {
   els.screenPairing.hidden = true;
   els.screenLogin.hidden = false;
+  closeMenu();
 }
 
 export function hideScreens() {
@@ -121,9 +154,7 @@ function applyChip() {
 }
 
 export function setConnection(state) {
-  connState = state;
-  els.connDot.className = state;
-  els.connLabel.textContent = state === "connecting" ? "connecting…" : state;
+  connState = state; // no dedicated indicator — the state chip shows offline/connecting
   applyChip();
 }
 
@@ -263,7 +294,9 @@ export function renderWorkstreams(workstreams) {
   wsCount = workstreams.length;
 
   const snap = JSON.stringify(
-    workstreams.map((ws) => [ws.name, ws.title, ws.status, ws.state, ws.agents, ws.context_pct])
+    workstreams.map((ws) => [
+      ws.name, ws.title, ws.status, ws.state, ws.agents, ws.context_pct, ws.model,
+    ])
   );
   if (snap === wsSnapshot) return; // rebuilding would kill swipe position + armed buttons
   wsSnapshot = snap;
@@ -286,6 +319,10 @@ export function renderWorkstreams(workstreams) {
     title.className = "ws-title";
     title.textContent = label;
     head.append(dot, title);
+    const model = document.createElement("span");
+    model.className = "ws-model";
+    model.textContent = ws.model;
+    head.append(model);
     if (ws.agents > 0) {
       const agents = document.createElement("span");
       agents.className = "ws-agents";

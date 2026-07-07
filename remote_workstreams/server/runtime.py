@@ -218,6 +218,12 @@ class ConvoRuntime:
     async def compact(self) -> None:
         await self.bridge.slash("/compact")
 
+    async def set_model(self, target: str, model: str) -> None:
+        self.workstreams.set_model(target, model)
+        if target == "convo":
+            await self.bridge.slash(f"/model {model}")  # the live session switches now
+        await self.workstreams.push_cards()  # the menu reflects the pick immediately
+
     def compact_workstream(self, name: str) -> None:
         self._background(self.workstreams.compact_workstream(name))
 

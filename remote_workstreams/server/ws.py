@@ -131,6 +131,8 @@ async def _handle(runtime: ConvoRuntime, conn: WSConnection, text: str) -> None:
         await runtime.compact()
     elif isinstance(msg, protocol.CompactWorkstream):
         runtime.compact_workstream(msg.workstream)
+    elif isinstance(msg, protocol.SetModel):
+        await runtime.set_model(msg.target, msg.model)
     elif isinstance(msg, protocol.ClearConvo):
         runtime.clear_convo()
     elif isinstance(msg, protocol.Approval):

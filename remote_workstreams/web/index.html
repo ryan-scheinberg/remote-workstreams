@@ -17,10 +17,11 @@
 
 <div id="app">
   <header id="topbar">
-    <div id="conn" aria-live="polite">
-      <span id="conn-dot" class="offline"></span>
-      <span id="conn-label">offline</span>
-    </div>
+    <button id="btn-menu" type="button" aria-label="Settings" aria-expanded="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4.5 7h15M4.5 12h15M4.5 17h15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+    </button>
     <div id="state-chip" data-state="offline" aria-live="polite">
       <span class="chip-dot"></span>
       <span id="state-label">offline</span>
@@ -32,6 +33,25 @@
       </svg>
     </button>
   </header>
+
+  <div id="menu" hidden>
+    <div class="menu-row">
+      <span class="menu-name">convo</span>
+      <div class="menu-models" data-target="convo">
+        <button type="button" data-model="sonnet">sonnet</button>
+        <button type="button" data-model="opus">opus</button>
+        <button type="button" data-model="fable">fable</button>
+      </div>
+    </div>
+    <div class="menu-row">
+      <span class="menu-name">new workstreams</span>
+      <div class="menu-models" data-target="workstream">
+        <button type="button" data-model="sonnet">sonnet</button>
+        <button type="button" data-model="opus">opus</button>
+        <button type="button" data-model="fable">fable</button>
+      </div>
+    </div>
+  </div>
 
   <section id="chat" aria-live="polite">
     <p id="chat-empty">Say something. The conversation lands here.</p>
