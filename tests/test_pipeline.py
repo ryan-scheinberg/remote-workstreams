@@ -265,6 +265,59 @@ async def test_speech_during_thinking_supersedes_turn() -> None:
     await asyncio.wait_for(task, 1)
 
 
+async def test_resumed_speech_within_grace_merges_into_one_turn(monkeypatch) -> None:
+    """The live cut-off: Deepgram's VAD endpoints on quiet mid-thought speech.
+    Resuming within the grace hold must cancel the commit and fold everything
+    into one turn instead of two half-thought prompts."""
+    monkeypatch.setattr(
+        "remote_workstreams.audio.pipeline._GRACE_S", 0.3
+    )  # roomy enough that the resume deterministically lands inside it
+    pipeline, stt, _, convo, sink = build()
+    task = asyncio.create_task(pipeline.run())
+
+    stt.push(chunk("it seems like less breath", is_final=True, speech_final=True))
+    stt.push(chunk("than the other parts", is_final=True))  # still talking
+    stt.push(chunk("", is_final=True, speech_final=True))  # the real pause
+    await wait_for(lambda: sink.states[-1:] == [LISTENING])
+
+    assert convo.turns == ["it seems like less breath than the other parts"]
+    assert sink.states == [THINKING, SPEAKING, LISTENING]  # one turn, not two
+
+    await pipeline.close()
+    await asyncio.wait_for(task, 1)
+
+
+async def test_merged_endpoints_reach_the_latency_line(caplog) -> None:
+    caplog.set_level(logging.INFO, logger="remote_workstreams.latency")
+    pipeline, stt, _, convo, sink = build()
+    task = asyncio.create_task(pipeline.run())
+
+    stt.push(chunk("first half", is_final=True, speech_final=True))
+    stt.push(chunk("second half", is_final=True, speech_final=True))
+    await wait_for(lambda: sink.states[-1:] == [LISTENING])
+    await pipeline.close()
+    await asyncio.wait_for(task, 1)
+
+    assert convo.turns == ["first half second half"]
+    (record,) = [r for r in caplog.records if r.name == "remote_workstreams.latency"]
+    assert json.loads(record.message)["merged_endpoints"] == 1
+
+
+async def test_mute_commits_without_grace(monkeypatch) -> None:
+    """Muting is the user saying 'done' — no grace hold, the turn goes now."""
+    monkeypatch.setattr("remote_workstreams.audio.pipeline._GRACE_S", 30.0)
+    pipeline, stt, _, convo, sink = build()
+    task = asyncio.create_task(pipeline.run())
+
+    stt.push(chunk("ship it", is_final=True))
+    await wait_for(lambda: sink.transcripts)
+    pipeline.set_muted(True)
+    await wait_for(lambda: convo.turns == ["ship it"])  # long before any grace expiry
+
+    await pipeline.close()
+    await asyncio.wait_for(task, 1)
+
+
 async def test_typed_input_runs_turn_without_stt() -> None:
     pipeline, _, _, convo, sink = build()
     await pipeline.text("  deploy it  ")

@@ -13,6 +13,12 @@ Turn/interruption policy:
   writing — the full reply still lands in chat from the transcript.
 - User speech that endpoints while a turn is still THINKING supersedes it: the
   in-flight turn is cancelled and a fresh turn runs with the new text.
+- Endpoints are SOFT: Deepgram's VAD reads quiet trailing speech as silence and
+  endpoints mid-thought (live: "…less breath" / "than than some of the other
+  parts" split into two turns, the reply to the first killed by the second's
+  barge-in). So a speech_final schedules the commit _GRACE_S later; any resumed
+  speech in that window cancels it and the words keep accumulating into one
+  turn. Muting commits immediately — that's the user saying "done".
 - sink.transcript carries ONLY user STT interims (final=False, the live caption).
   Final text of both roles reaches the UI from ConvoBridge entries via the server.
 
@@ -40,6 +46,8 @@ from remote_workstreams.audio.state import PipelineState, StateMachine
 logger = logging.getLogger(__name__)
 latency_log = logging.getLogger("remote_workstreams.latency")
 
+_GRACE_S = 1.2  # endpoint-to-commit hold; resumed speech within it merges the turn
+
 
 @dataclass
 class TurnTimings:
@@ -53,6 +61,7 @@ class TurnTimings:
     first_audio_ts: float | None = None
     end_ts: float | None = None
     interrupted: bool = False
+    merged_endpoints: int = 0  # premature endpoints folded into this turn by the grace hold
 
     def log_line(self) -> str:
         data = asdict(self)
@@ -109,6 +118,8 @@ class AudioPipeline:
         self._mic: asyncio.Queue[bytes | None] = asyncio.Queue()
         self._finals: list[str] = []  # finalized spans of the in-progress user utterance
         self._turn_task: asyncio.Task[None] | None = None
+        self._grace_task: asyncio.Task[None] | None = None  # endpoint held, not yet committed
+        self._merged = 0  # premature endpoints folded into the pending turn
         self._mute_flush_task: asyncio.Task[None] | None = None
         self._closed = False
 
@@ -145,12 +156,13 @@ class AudioPipeline:
             # Muting mid-utterance is an endpoint: once mic frames stop, the
             # trailing silence Deepgram needs to endpoint will never arrive.
             chunk = TranscriptChunk(text="", is_final=True, speech_final=True)
-            self._mute_flush_task = asyncio.create_task(self._endpoint(chunk))
+            self._mute_flush_task = asyncio.create_task(self._endpoint(chunk, grace=False))
 
     async def close(self) -> None:
         if self._closed:
             return
         self._closed = True
+        self._cancel_grace()
         await self._abort_turn()
         await self._mic.put(None)  # ends _mic_audio → STT stream ends → run() returns
 
@@ -174,6 +186,9 @@ class AudioPipeline:
         if text and self._sm.state is PipelineState.SPEAKING:
             await self._barge_in()
         if text:
+            if self._grace_task is not None:  # still talking: that endpoint was premature
+                self._cancel_grace()
+                self._merged += 1
             if chunk.is_final:
                 self._finals.append(text)
                 display = " ".join(self._finals)
@@ -188,15 +203,40 @@ class AudioPipeline:
         await self._abort_turn()  # stops audio immediately, cancels TTS
         await self._set_state(PipelineState.INTERRUPTED)
 
-    async def _endpoint(self, chunk: TranscriptChunk) -> None:
-        text = " ".join(self._finals)
-        self._finals.clear()
-        if not text:
+    async def _endpoint(self, chunk: TranscriptChunk, grace: bool = True) -> None:
+        self._cancel_grace()
+        if not self._finals:
             if self._sm.state is PipelineState.INTERRUPTED:
                 await self._set_state(PipelineState.LISTENING)  # barge-in was noise
             return
-        timings = TurnTimings(kind="voice", endpoint_ts=chunk.ts, transcript_ts=time.time())
+        if grace:
+            self._grace_task = asyncio.create_task(self._commit_later(chunk.ts))
+        else:
+            await self._commit(chunk.ts)
+
+    async def _commit_later(self, endpoint_ts: float) -> None:
+        await asyncio.sleep(_GRACE_S)
+        self._grace_task = None
+        await self._commit(endpoint_ts)
+
+    async def _commit(self, endpoint_ts: float) -> None:
+        if self._closed:
+            return
+        text = " ".join(self._finals)
+        self._finals.clear()
+        timings = TurnTimings(
+            kind="voice",
+            endpoint_ts=endpoint_ts,
+            transcript_ts=time.time(),
+            merged_endpoints=self._merged,
+        )
+        self._merged = 0
         await self._start_turn(lambda: self.convo.turn(text), timings)
+
+    def _cancel_grace(self) -> None:
+        task, self._grace_task = self._grace_task, None
+        if task is not None and not task.done():
+            task.cancel()
 
     async def _start_turn(
         self, factory: Callable[[], AsyncIterator[str]], timings: TurnTimings
