@@ -32,11 +32,30 @@ def test_echo_matches_verbatim_run_not_topical_overlap() -> None:
     # A human reply reusing the topic's words, but not quoting us verbatim, passes.
     assert not g.is_echo("did the build go green or not")
     assert not g.is_echo("so every deploy is done then great")
-    # Short utterances — barge-ins included — always pass (never suppressed).
+    # Short interjections pass — they never open exactly like the reply.
     assert not g.is_echo("wait stop that")
     assert not g.is_echo("no the build")
     assert not g.is_echo("")
     assert not g.is_echo("   ")
+
+
+def test_clipped_opening_is_echo_but_short_interjections_pass() -> None:
+    """The live failure: barge-in clips playback at the reply's opening, so the
+    echo endpoints as a short verbatim prefix ("sure easy test") — under the old
+    len<5 blanket pass it committed as phantom user input on every long reply."""
+    g, _ = guard()
+    g.start_utterance()
+    g.note_sentence("Sure, easy test. Just hit the plus workstream button.")
+    g.note_audio(ONE_SECOND)
+    # Growing interims of the echo — every prefix glimpse is caught.
+    assert g.is_echo("sure")
+    assert g.is_echo("sure easy")
+    assert g.is_echo("Sure, easy test")
+    # Verbatim words but not the opening: a human quoting mid-reply passes.
+    assert not g.is_echo("plus workstream button")
+    # Near-miss prefixes are human speech, not acoustics.
+    assert not g.is_echo("sure the test")
+    assert not g.is_echo("so easy test")
 
 
 def test_short_reply_echoes_only_as_its_exact_whole() -> None:
@@ -108,6 +127,33 @@ async def test_echo_interim_while_speaking_does_not_barge_in() -> None:
 
     stt.push(chunk("wait stop"))  # real user speech still barges in
     await wait_for(lambda: PipelineState.INTERRUPTED in sink.states)
+
+    await pipeline.close()
+    await asyncio.wait_for(task, 2)
+
+
+async def test_short_echo_interims_neither_barge_in_nor_become_a_turn() -> None:
+    """End-to-end replay of the clipping loop: Deepgram's first interims of an
+    echo are 1-3 words; they must not barge in, and their endpointed final must
+    not commit as user input."""
+    tts = FakeTTS(hold_first=True)
+    convo = FakeConvo(replies=[["Sure, easy test. Just hit the plus workstream button."]])
+    pipeline, stt, tts, convo, sink = build(convo=convo, tts=tts)
+    task = asyncio.create_task(pipeline.run())
+
+    stt.push(chunk("kick off the test", is_final=True, speech_final=True))
+    await wait_for(lambda: PipelineState.SPEAKING in sink.states and sink.audio_chunks)
+
+    stt.push(chunk("sure"))  # the phone hearing our own opening words
+    stt.push(chunk("sure easy"))
+    stt.push(chunk("sure easy test", is_final=True))
+    await asyncio.sleep(0.1)
+    assert PipelineState.INTERRUPTED not in sink.states  # playback never clipped
+    assert not any(role == "user" for role, _, _ in sink.transcripts)
+
+    stt.push(chunk("", is_final=True, speech_final=True))  # the echo endpoints
+    await asyncio.sleep(0.1)
+    assert convo.turns == ["kick off the test"]  # no phantom user turn
 
     await pipeline.close()
     await asyncio.wait_for(task, 2)

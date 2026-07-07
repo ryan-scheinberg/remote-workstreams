@@ -9,12 +9,19 @@ while the phone could still be playing it is a candidate for echo.
 The signal is a VERBATIM CONTIGUOUS RUN: real acoustic echo transcribes a long
 run of the reply word-for-word, while a human reply reuses the topic's words but
 never quotes five of them in a row in order. So echo = some 5-word run of the
-transcript appears verbatim in what we just said. Anything shorter than that run
-always passes — barge-ins ("wait, stop that") and on-topic replies are never
-eaten. One exception: a reply too short to hold such a run ("Sounds good.")
-echoes as its exact verbatim whole, so that alone matches. Erring toward passing
-is deliberate: a rare leaked echo self-interrupts one turn (recoverable — the
-reply still lands in chat), but eating real speech breaks the conversation.
+transcript appears verbatim in what we just said.
+
+Shorter transcripts get a prefix test instead: STT interims grow from one word,
+so the first glimpse of an echo is the reply's opening verbatim — and once it
+slips through as barge-in it kills playback, which clips the echo to exactly
+those opening words (they then endpoint as phantom user input; this looped every
+long reply until caught). So a short transcript is echo iff it is the
+utterance's verbatim word prefix; real interjections ("wait, stop that") never
+open exactly like the reply, so barge-in stays instant. A reply too short to
+hold a 5-word run ("Sounds good.") echoes only as its exact verbatim whole.
+Beyond the prefix rule, erring toward passing is deliberate: a rare leaked echo
+self-interrupts one turn (recoverable — the reply still lands in chat), but
+eating real speech breaks the conversation.
 """
 
 from __future__ import annotations
@@ -76,7 +83,9 @@ class EchoGuard:
             # only its exact verbatim whole counts, so a real reply that adds
             # anything at all passes.
             return words == spoken
-        if len(words) < _RUN:  # short utterances (incl. barge-ins) always pass
-            return False
+        if len(words) < _RUN:
+            # Short = a growing interim or a clipped capture: echo iff it's the
+            # reply's opening verbatim; interjections never are, so they barge in.
+            return bool(words) and words == spoken[: len(words)]
         grams = {tuple(spoken[j : j + _RUN]) for j in range(len(spoken) - _RUN + 1)}
         return any(tuple(words[i : i + _RUN]) in grams for i in range(len(words) - _RUN + 1))
