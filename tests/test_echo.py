@@ -40,7 +40,7 @@ def test_echo_matches_verbatim_run_not_topical_overlap() -> None:
 
 
 def test_clipped_opening_is_echo_but_short_interjections_pass() -> None:
-    """The live failure: barge-in clips playback at the reply's opening, so the
+    """The clipping loop: barge-in clips playback at the reply's opening, so the
     echo endpoints as a short verbatim prefix ("sure easy test") — under the old
     len<5 blanket pass it committed as phantom user input on every long reply."""
     g, _ = guard()
@@ -53,22 +53,69 @@ def test_clipped_opening_is_echo_but_short_interjections_pass() -> None:
     assert g.is_echo("Sure, easy test")
     # Verbatim words but not the opening: a human quoting mid-reply passes.
     assert not g.is_echo("plus workstream button")
-    # Near-miss prefixes are human speech, not acoustics.
-    assert not g.is_echo("sure the test")
+    # Opens with our exact first word and stays similar: treated as a garbled
+    # echo now (mishearing bit us live); a different first word stays human.
+    assert g.is_echo("sure the test")
     assert not g.is_echo("so easy test")
 
 
-def test_short_reply_echoes_only_as_its_exact_whole() -> None:
+def test_homophone_garble_is_echo() -> None:
+    """The second live failure: Deepgram misheard the replayed reply — "Yep,
+    Sonnet 5" came back as "yep it's on at five" and committed as a phantom
+    turn ("Got it, confirmed."). No verbatim run survives a garble; character
+    similarity of the digit-normalized text does."""
     g, _ = guard()
+    g.start_utterance()
+    g.note_sentence("Yep, Sonnet 5 — the current one, not four.")
+    g.note_audio(4 * ONE_SECOND)
+    assert g.is_echo("yep it's")  # the growing interim must not barge in
+    assert g.is_echo("yep it's on at five")  # the endpointed phantom
+    # Real speech about the same topic still passes.
+    assert not g.is_echo("stop")
+    assert not g.is_echo("what model are you running right now")
+
+
+def test_garble_that_outgrows_the_reply_is_still_echo() -> None:
+    g, clock = guard()
+    g.start_utterance()
+    g.note_sentence("I'm Sonnet 5.")  # "5" is spoken (and misheard) as words
+    g.note_audio(ONE_SECOND)
+    clock.t += 1.2
+    assert g.is_echo("i'm connet 5 and five")  # the interim Ryan watched land
+    assert g.is_echo("i'm sonnet five")  # digit/word mismatch alone
+
+
+def test_tail_capture_is_echo_only_near_playback_end() -> None:
+    """The third live failure: the mic caught just the reply's last word
+    ("five" after "I'm Sonnet 5.") and it committed as a turn. An exact word
+    suffix is echo — but only once those words have actually played, so a
+    mid-playback "stop" can never be eaten by this rule."""
+    g, clock = guard()
+    g.start_utterance()
+    g.note_sentence("The current one, not four — treat it as a stop.")
+    g.note_audio(4 * ONE_SECOND)
+    assert not g.is_echo("stop")  # mid-playback: the tail hasn't played yet
+    clock.t += 3.5  # inside the final second of playback
+    assert g.is_echo("stop")  # now it's the speaker, not the user
+    assert g.is_echo("a stop")
+    assert not g.is_echo("wait stop")  # not our tail — real speech
+
+
+def test_short_reply_echo() -> None:
+    g, clock = guard()
     g.start_utterance()
     g.note_sentence("Sounds good.")
     g.note_audio(ONE_SECOND)
     assert g.is_echo("sounds good")  # the phone playing us back
-    # A real reply that adds or changes anything passes.
+    # Similar enough to be a garble; within the window an eaten word costs one
+    # repeat, a leaked echo costs a whole prompt-and-speak loop.
+    assert g.is_echo("sounds bad")
+    # Extends our words well beyond what played: a real reply, out of scope.
     assert not g.is_echo("sounds good let's move on")
-    assert not g.is_echo("sounds bad")
     assert not g.is_echo("wait stop")
-    assert not g.is_echo("good")  # partial capture stays speech, not echo
+    assert not g.is_echo("good")  # mid-playback the tail hasn't played
+    clock.t += 0.8
+    assert g.is_echo("good")  # tail capture at the end of playback
 
 
 def test_no_audio_sent_means_no_echo() -> None:
@@ -154,6 +201,31 @@ async def test_short_echo_interims_neither_barge_in_nor_become_a_turn() -> None:
     stt.push(chunk("", is_final=True, speech_final=True))  # the echo endpoints
     await asyncio.sleep(0.1)
     assert convo.turns == ["kick off the test"]  # no phantom user turn
+
+    await pipeline.close()
+    await asyncio.wait_for(task, 2)
+
+
+async def test_homophone_echo_neither_barges_in_nor_becomes_a_turn() -> None:
+    """End-to-end replay of the Sonnet-5 incident: the misheard echo of the
+    reply must not clip playback, and its endpointed final must not commit."""
+    tts = FakeTTS(hold_first=True)
+    convo = FakeConvo(replies=[["Yep, Sonnet 5 — the current one, not four."]])
+    pipeline, stt, tts, convo, sink = build(convo=convo, tts=tts)
+    task = asyncio.create_task(pipeline.run())
+
+    stt.push(chunk("what model is this", is_final=True, speech_final=True))
+    await wait_for(lambda: PipelineState.SPEAKING in sink.states and sink.audio_chunks)
+
+    stt.push(chunk("yep it's"))  # the phone mishearing our own TTS
+    stt.push(chunk("yep it's on at five", is_final=True))
+    await asyncio.sleep(0.1)
+    assert PipelineState.INTERRUPTED not in sink.states  # playback never clipped
+    assert not any(role == "user" for role, _, _ in sink.transcripts)
+
+    stt.push(chunk("", is_final=True, speech_final=True))  # the echo endpoints
+    await asyncio.sleep(0.1)
+    assert convo.turns == ["what model is this"]  # no "Got it, confirmed." turn
 
     await pipeline.close()
     await asyncio.wait_for(task, 2)
