@@ -131,7 +131,7 @@ export class Playback {
     const src = this.ctx.createBufferSource();
     src.buffer = buffer;
     src.connect(this.gain);
-    const at = Math.max(this.nextTime, this.ctx.currentTime + 0.06);
+    const at = Math.max(this.nextTime, this.ctx.currentTime + 0.06); // 60ms jitter buffer
     src.start(at);
     this.nextTime = at + buffer.duration;
     this.active.add(src);

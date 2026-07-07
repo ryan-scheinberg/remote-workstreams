@@ -116,7 +116,7 @@ class AudioPipeline:
         self._echo = EchoGuard()
         self._sm = StateMachine()
         self._mic: asyncio.Queue[bytes | None] = asyncio.Queue()
-        self._finals: list[str] = []  # finalized spans of the in-progress user utterance
+        self._final_spans: list[str] = []  # finalized spans of the in-progress user utterance
         self._turn_task: asyncio.Task[None] | None = None
         self._grace_task: asyncio.Task[None] | None = None  # endpoint held, not yet committed
         self._merged = 0  # premature endpoints folded into the pending turn
@@ -152,7 +152,7 @@ class AudioPipeline:
 
     def set_muted(self, muted: bool) -> None:
         self.muted = muted
-        if muted and self._finals and not self._closed:
+        if muted and self._final_spans and not self._closed:
             # Muting mid-utterance is an endpoint: once mic frames stop, the
             # trailing silence Deepgram needs to endpoint will never arrive.
             chunk = TranscriptChunk(text="", is_final=True, speech_final=True)
@@ -190,10 +190,10 @@ class AudioPipeline:
                 self._cancel_grace()
                 self._merged += 1
             if chunk.is_final:
-                self._finals.append(text)
-                display = " ".join(self._finals)
+                self._final_spans.append(text)
+                display = " ".join(self._final_spans)
             else:
-                display = " ".join([*self._finals, text])
+                display = " ".join([*self._final_spans, text])
             if not chunk.speech_final:
                 await self.sink.transcript("user", display, final=False)
         if chunk.speech_final:
@@ -205,7 +205,7 @@ class AudioPipeline:
 
     async def _endpoint(self, chunk: TranscriptChunk, grace: bool = True) -> None:
         self._cancel_grace()
-        if not self._finals:
+        if not self._final_spans:
             if self._sm.state is PipelineState.INTERRUPTED:
                 await self._set_state(PipelineState.LISTENING)  # barge-in was noise
             return
@@ -222,8 +222,8 @@ class AudioPipeline:
     async def _commit(self, endpoint_ts: float) -> None:
         if self._closed:
             return
-        text = " ".join(self._finals)
-        self._finals.clear()
+        text = " ".join(self._final_spans)
+        self._final_spans.clear()
         timings = TurnTimings(
             kind="voice",
             endpoint_ts=endpoint_ts,

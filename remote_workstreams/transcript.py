@@ -1,7 +1,7 @@
 """Claude Code transcript JSONL parsing — the only module that reads the format.
 
 The format is undocumented; this pins the shape observed live on Claude Code
-2.1.201 (one JSON object per line). parse_line never raises: anything
+2.1.202 (one JSON object per line). parse_line never raises: anything
 unrecognized or unparseable yields no entries.
 """
 

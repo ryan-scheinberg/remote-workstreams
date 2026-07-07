@@ -1,6 +1,8 @@
 // All DOM rendering and control wiring. app.js owns transport, audio, and
 // state; this module owns pixels. init(handlers) binds the controls once.
 
+import { hasWebAuthn } from "./pairing.js";
+
 const $ = (id) => document.getElementById(id);
 
 const els = {
@@ -50,7 +52,7 @@ const STATE_COPY = {
 export function init(h) {
   handlers = h;
   els.loginUnlock.addEventListener("click", () => handlers.onUnlock());
-  els.loginPair.addEventListener("click", () => showPairing(true));
+  els.loginPair.addEventListener("click", () => showPairing(hasWebAuthn()));
   els.pairBack.addEventListener("click", showLogin);
   els.pairForm.addEventListener("submit", (e) => {
     e.preventDefault();

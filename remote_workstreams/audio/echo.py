@@ -104,19 +104,21 @@ class EchoGuard:
         if words == spoken[: len(words)]:  # verbatim opening (or the exact whole)
             return True
 
-        heard_c = "".join(words)
-        spoken_c = "".join(spoken)
+        heard_joined = "".join(words)
+        spoken_joined = "".join(spoken)
         # An echo can't hold much more than was played; a real reply that
         # extends our words ("sounds good let's move on") is out of fuzzy scope.
         # Garbles run long ("I'm Sonnet 5." → "i'm connet 5 and five"), so 5/3.
-        fits = 3 * len(heard_c) <= 5 * len(spoken_c)
+        fits = 3 * len(heard_joined) <= 5 * len(spoken_joined)
 
         # Garbled opening: echo interims start at the reply's start, so the
         # first word comes through exact even when the rest is misheard.
         if fits and words[0] == spoken[0]:
-            n = len(heard_c)
+            n = len(heard_joined)
+            # Match the exact heard length, then a wider window: garble pads the
+            # transcript longer than what we spoke.
             for width in (n, n + max(2, n // 4)):
-                if _similar(heard_c, spoken_c[:width]) >= _PREFIX_SIM:
+                if _similar(heard_joined, spoken_joined[:width]) >= _PREFIX_SIM:
                     return True
 
         # Tail capture: the mic catching the reply's final words — which can
@@ -137,11 +139,11 @@ class EchoGuard:
         # seq2 is cached by SequenceMatcher; the quick_ratio upper bounds skip
         # ratio() for most offsets, keeping this cheap on the audio path.
         if fits and len(words) >= _REGION_MIN_WORDS:
-            n = len(heard_c)
-            matcher = SequenceMatcher(None, "", heard_c)
+            n = len(heard_joined)
+            matcher = SequenceMatcher(None, "", heard_joined)
             for width in (n, n + max(2, n // 4)):
-                for start in range(0, max(1, len(spoken_c) - width + 1)):
-                    matcher.set_seq1(spoken_c[start : start + width])
+                for start in range(0, max(1, len(spoken_joined) - width + 1)):
+                    matcher.set_seq1(spoken_joined[start : start + width])
                     if (
                         matcher.real_quick_ratio() >= _REGION_SIM
                         and matcher.quick_ratio() >= _REGION_SIM

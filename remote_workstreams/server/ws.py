@@ -137,5 +137,8 @@ async def _handle(runtime: ConvoRuntime, conn: WSConnection, text: str) -> None:
         runtime.clear_convo()
     elif isinstance(msg, protocol.Approval):
         runtime.approvals.resolve(msg.approval_id, msg.approved)
-    else:  # a second Hello mid-connection
+    elif isinstance(msg, protocol.Hello):  # a second Hello mid-connection
         await conn.send_message(protocol.Error(message="already connected"))
+    else:  # a ClientMessage type with no handler — add an elif above
+        logger.warning("unhandled client message: %s", msg.type)
+        await conn.send_message(protocol.Error(message="invalid message"))
