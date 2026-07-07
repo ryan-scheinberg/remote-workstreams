@@ -81,7 +81,7 @@ def test_garble_that_outgrows_the_reply_is_still_echo() -> None:
     g.note_sentence("I'm Sonnet 5.")  # "5" is spoken (and misheard) as words
     g.note_audio(ONE_SECOND)
     clock.t += 1.2
-    assert g.is_echo("i'm connet 5 and five")  # the interim Ryan watched land
+    assert g.is_echo("i'm connet 5 and five")  # the live incident's garbled interim
     assert g.is_echo("i'm sonnet five")  # digit/word mismatch alone
 
 
