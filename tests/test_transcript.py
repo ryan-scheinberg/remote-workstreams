@@ -254,7 +254,7 @@ def test_vitals_context_pct_from_last_usage(tmp_path):
         "output_tokens": 998,
     }
     vitals = vitals_from(tmp_path, prompt(), reply(usage=usage), turn_end())
-    assert vitals.context_pct == 34  # 67_000 / 200_000
+    assert vitals.context_pct == 7  # 67_000 / 1_000_000, rounded
     assert vitals.state == "waiting"
 
 
@@ -267,22 +267,22 @@ def test_vitals_compacting_shows_thinking_until_boundary(tmp_path):
     vitals = vitals_from(
         tmp_path,
         *compacting,
-        line(type="system", subtype="compact_boundary", compactMetadata={"postTokens": 9_000}),
+        line(type="system", subtype="compact_boundary", compactMetadata={"postTokens": 90_000}),
         line(type="user", isCompactSummary=True, message={"content": "This session is..."}),
     )
     assert vitals.state == "waiting"  # boundary ends it; the card goes green
-    assert vitals.context_pct == 4  # 9_000 / 200_000, rounded
+    assert vitals.context_pct == 9  # 90_000 / 1_000_000
 
 
 def test_vitals_compact_boundary_resets_context(tmp_path):
     vitals = vitals_from(
         tmp_path,
-        reply(usage={"input_tokens": 180_000}),
+        reply(usage={"input_tokens": 800_000}),
         turn_end(),
-        line(type="system", subtype="compact_boundary", compactMetadata={"postTokens": 12_000}),
+        line(type="system", subtype="compact_boundary", compactMetadata={"postTokens": 120_000}),
         line(type="user", isCompactSummary=True, message={"content": "This session is..."}),
     )
-    assert vitals.context_pct == 6
+    assert vitals.context_pct == 12
     assert vitals.state == "waiting"  # the compact summary is not a new prompt
 
 

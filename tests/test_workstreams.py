@@ -235,7 +235,7 @@ async def test_cards_carry_vitals_from_the_transcript(rig):
         transcript_line(
             type="assistant",
             message={
-                "usage": {"input_tokens": 2, "cache_read_input_tokens": 79_998},
+                "usage": {"input_tokens": 2, "cache_read_input_tokens": 399_998},
                 "content": [{"type": "tool_use", "id": "t1", "name": "Agent", "input": {}}],
             },
         ),
@@ -260,14 +260,14 @@ async def test_cards_carry_vitals_from_the_transcript(rig):
 async def test_push_carries_convo_context_pct_and_follows_repointing(rig):
     manager, store, substrate, notify, tmp_path = rig
     (tmp_path / "convo.jsonl").write_text(
-        transcript_line(type="assistant", message={"usage": {"input_tokens": 20_000}, "content": []})
+        transcript_line(type="assistant", message={"usage": {"input_tokens": 100_000}, "content": []})
     )
     await manager.push_cards()
     assert notify.messages[-1].convo_context_pct == 10
 
     fresh = tmp_path / "convo-fresh.jsonl"  # Clear swaps the convo session
     fresh.write_text(
-        transcript_line(type="assistant", message={"usage": {"input_tokens": 2_000}, "content": []})
+        transcript_line(type="assistant", message={"usage": {"input_tokens": 10_000}, "content": []})
     )
     manager.convo_transcript = fresh
     await manager.push_cards()

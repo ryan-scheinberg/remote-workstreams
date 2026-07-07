@@ -135,7 +135,7 @@ class TranscriptTail:
         return entries
 
 
-CONTEXT_WINDOW = 200_000  # tokens; what the roster's models run with
+CONTEXT_WINDOW = 1_000_000  # tokens; what the roster's models run with
 
 VitalsState = Literal["waiting", "thinking", "error"]
 
