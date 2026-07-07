@@ -153,6 +153,11 @@ class Substrate:
 
     async def slash(self, session: CCSession, command: str) -> None:
         await self._tmux.type_line(session.window, command)
+        if command.startswith("/model"):
+            # CC 2.1.202 silently swallows the FIRST input submitted after /model
+            # (typed or pasted); a blank Enter takes the hit so real input never does.
+            await asyncio.sleep(1.0)
+            await self._tmux.send_key(session.window, "Enter")
 
     async def alive(self, session: CCSession) -> bool:
         return await self._tmux.window_exists(session.window)

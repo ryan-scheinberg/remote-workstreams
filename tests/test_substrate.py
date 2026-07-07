@@ -33,6 +33,9 @@ class FakeTmux:
     async def type_line(self, window: str, text: str) -> None:
         self.calls.append(("type_line", window, text))
 
+    async def send_key(self, window: str, key: str) -> None:
+        self.calls.append(("send_key", window, key))
+
     async def kill_window(self, window: str) -> None:
         self.calls.append(("kill_window", window))
 
@@ -143,6 +146,20 @@ async def test_slash_is_typed_not_pasted():
     await sub.slash(session, "/compact")
     assert fake.calls[-1] == ("type_line", "voice:convo", "/compact")
     assert not [call for call in fake.calls if call[0] == "paste"]
+
+
+async def test_slash_model_sends_a_sacrificial_enter():
+    """CC 2.1.202 swallows the first input submitted after /model — verified live:
+    a voice turn pasted 9s after /model never reached the session. The blank
+    Enter absorbs the eat; other slash commands don't get (or need) it."""
+    fake = FakeTmux()
+    sub = Substrate(fake, home=HOME)
+    session = await sub.spawn(CONVO)
+    await sub.slash(session, "/model sonnet")
+    assert fake.calls[-2:] == [
+        ("type_line", "voice:convo", "/model sonnet"),
+        ("send_key", "voice:convo", "Enter"),
+    ]
 
 
 async def test_alive_and_kill():
