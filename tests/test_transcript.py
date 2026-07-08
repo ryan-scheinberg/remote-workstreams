@@ -310,6 +310,23 @@ def test_vitals_background_agent_survives_ack_until_notification(tmp_path):
     assert vitals.state == "waiting"  # the notification line is not a prompt
 
 
+def test_vitals_background_agent_clears_on_queued_notification(tmp_path):
+    """An agent that finishes while the parent is mid-turn has its
+    <task-notification> QUEUED — it lands on a `queue-operation` line (top-level
+    content), not a `user` line. Scanning only user lines leaked the count: a
+    workstream sat on "3 subagents active" for hours after the agents finished."""
+    ack = agent_result("t1", "Async agent launched successfully.\nagentId: abc123")
+    queued = line(
+        type="queue-operation",
+        operation="add",
+        content="<task-notification>\n<task-id>abc123</task-id>"
+        "\n<tool-use-id>t1</tool-use-id>\n<status>completed</status>",
+    )
+    vitals = vitals_from(tmp_path, prompt(), agent_call("t1"), ack, turn_end(), queued)
+    assert vitals.active_agents == 0
+    assert vitals.state == "waiting"
+
+
 def test_vitals_api_error_holds_until_recovery(tmp_path):
     vitals = vitals_from(tmp_path, prompt(), reply(isApiErrorMessage=True))
     assert vitals.state == "error"

@@ -140,8 +140,8 @@ CONTEXT_WINDOW = 1_000_000  # tokens; what the roster's models run with
 VitalsState = Literal["waiting", "thinking", "error"]
 
 _AGENT_TOOLS = frozenset({"Agent", "Task"})
-# A backgrounded agent's tool_result is only the launch ack; the real completion
-# arrives later as a <task-notification> user line carrying the tool_use_id.
+# A backgrounded agent's tool_result is only the launch ack; it stays active until
+# its <task-notification> completion line, matched by tool_use_id.
 _ASYNC_ACK = "Async agent launched"
 _NOTIFIED_ID = re.compile(r"<tool-use-id>([^<]*)</tool-use-id>")
 
@@ -155,6 +155,21 @@ def _result_text(block: dict) -> str:
             if isinstance(part, dict) and isinstance(part.get("text"), str):
                 return part["text"]
     return ""
+
+
+def _notification_ids(line: dict) -> list[str]:
+    """Tool_use ids a <task-notification> reports finished, wherever it sits.
+
+    A backgrounded agent's completion is a plain `user` line (message.content)
+    when the parent is idle, but a queued `queue-operation` line (top-level
+    content) when the parent is mid-turn — so match the text, not the line type.
+    """
+    message = line.get("message")
+    carriers = (line.get("content"), message.get("content") if isinstance(message, dict) else None)
+    for text in carriers:
+        if isinstance(text, str) and "<task-notification>" in text:
+            return _NOTIFIED_ID.findall(text)
+    return []
 
 
 class SessionVitals:
@@ -208,6 +223,8 @@ class SessionVitals:
             return
         if not isinstance(line, dict) or line.get("isSidechain"):
             return
+        for tid in _notification_ids(line):
+            self._agents.discard(tid)  # a finished agent notifies from any line type
         if line.get("type") == "system":
             if line.get("subtype") == "turn_duration":
                 self._thinking = False
@@ -270,11 +287,6 @@ class SessionVitals:
                 tid = str(block.get("tool_use_id"))
                 if tid in self._agents and not _result_text(block).startswith(_ASYNC_ACK):
                     self._agents.discard(tid)
-        elif isinstance(content, str) and content:
-            if content.startswith("<"):
-                if "<task-notification>" in content:
-                    for tid in _NOTIFIED_ID.findall(content):
-                        self._agents.discard(tid)
-            else:
-                self._thinking = True
-                self._error = False
+        elif isinstance(content, str) and content and not content.startswith("<"):
+            self._thinking = True  # a real user line starts a turn
+            self._error = False
