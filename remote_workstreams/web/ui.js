@@ -340,6 +340,15 @@ export function setConvoContext(pct) {
 
 let wsSnapshot = ""; // skip re-rendering unchanged cards: pushes come every 5s
 
+// 20 chars, trimmed at a word — the server enforces this for new workstreams;
+// trimming here too keeps rows stored before the limit from overflowing the card.
+function shortTitle(title) {
+  if (title.length <= 20) return title;
+  const cut = title.slice(0, 21);
+  const space = cut.lastIndexOf(" ");
+  return (space > 0 ? cut.slice(0, space) : title.slice(0, 20)).trimEnd();
+}
+
 // The name's color carries the session's state: green waiting, blue waiting
 // with subagents running, amber mid-turn, red errored or window gone.
 function tone(ws) {
@@ -366,7 +375,7 @@ export function renderWorkstreams(workstreams) {
   els.workstreams.replaceChildren(); // empty list renders nothing at all
   for (const ws of workstreams) {
     // Compact card: status dot + a state-colored name + the controls. Nothing else.
-    const label = (ws.title || ws.name).slice(0, 40);
+    const label = shortTitle(ws.title || ws.name);
     const card = document.createElement("article");
     card.className = `ws ${ws.status}`;
     card.dataset.tone = tone(ws);

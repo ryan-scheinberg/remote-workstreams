@@ -35,13 +35,22 @@ WORKSTREAM_MODEL, WORKSTREAM_EFFORT = "fable", "xhigh"
 Notify = Callable[[object], Awaitable[None]]
 
 
+_TITLE_MAX = 20  # cards are scanned, not read; short names win
+
+
 def _slug(title: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:32].strip("-") or "stint"
 
 
 def _title(plan_text: str) -> str:
     # Hard contract with role-stint-plan: the file's first line is "Stint: <title>".
-    return plan_text.splitlines()[0].removeprefix("Stint:").strip()
+    # The skill asks for ≤20 chars; longer ones get trimmed at a word boundary.
+    title = plan_text.splitlines()[0].removeprefix("Stint:").strip()
+    if len(title) <= _TITLE_MAX:
+        return title
+    cut = title[: _TITLE_MAX + 1]
+    space = cut.rfind(" ")
+    return (cut[:space] if space > 0 else title[:_TITLE_MAX]).rstrip()
 
 
 @dataclass

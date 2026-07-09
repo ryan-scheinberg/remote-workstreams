@@ -121,6 +121,14 @@ async def test_new_workstream_plans_then_launches(rig):
     )
 
 
+async def test_long_plan_titles_trim_to_a_word_boundary(rig):
+    """Cards are scanned, not read: 20 chars max, never cut mid-word."""
+    await launch(rig, plan_text="Stint: Add Codex CLI engine to workstreams\n\nGoal: g.\n")
+    (row,) = rig[1].list_workstreams()
+    assert row.title == "Add Codex CLI engine"
+    assert row.name == "ws-add-codex-cli-engine"
+
+
 async def test_new_workstream_since_line_comes_from_stored_marker(rig):
     manager, store, substrate, notify, tmp_path = rig
     store.set_marker(7)
