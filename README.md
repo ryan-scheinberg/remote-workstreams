@@ -28,8 +28,10 @@ reconnect and resume mid-conversation.
 ## From the phone
 
 - **Talk.** Streamed STT with barge-in — speak over the assistant and it stops.
-  A composer for when you can't talk; the transcript is the chat, so tool activity
-  and final replies render from the session's own record.
+  The transcript is the chat, so tool activity and final replies render from the
+  session's own record. A `Hush` button silences the rest of the current reply
+  (you're reading it anyway — the unspoken sentences are never synthesized, so
+  they cost nothing); a keyboard button unfolds a composer for when you can't talk.
 - **`+ Workstream`** marks the conversation since the last launch, has a planner
   session distill it into a stint plan, and launches an execution session on it —
   one button, no review step.
@@ -42,8 +44,10 @@ reconnect and resume mid-conversation.
 - **Approvals.** Destructive shell commands inside Claude workstreams relay to the
   phone as approve/deny cards; everything else runs without interruption.
 - **The picker** (hamburger) sets the conversation's and future workstreams' engine
-  and model. Every button on the phone arms-then-confirms — the armed label states
-  the consequence (blue `swap?` is safe, red `clear?` wipes the conversation).
+  and model, and only offers the engines wired on the Mac — a Codex-only box shows
+  three buttons, not six. Every button on the phone arms-then-confirms — the armed
+  label states the consequence (blue `swap?` is safe, red `clear?` wipes the
+  conversation).
 
 ## Engines
 
@@ -52,7 +56,9 @@ Code; pick a Codex model and it's Codex CLI (model lists live in
 `remote_workstreams/engines.py`). A Claude-to-Claude conversation pick switches the
 live session in place; switching engines (or between Codex models) starts a fresh
 conversation, announced before you confirm. Running workstreams always keep the
-engine and model they launched with.
+engine and model they launched with. The planner and injector sessions behind
+`+ Workstream` and `Send latest` run on whichever engine installed the service
+(store-configurable), so a single-engine box is fully functional either way.
 
 Engine differences that show: Codex has no known-in-advance session id, so the
 service discovers each session's rollout file on disk; Codex workstreams run inside
@@ -91,15 +97,16 @@ iPhone (Safari PWA) ──WebSocket/HTTPS over Tailscale──> Mac
 
 ## Install
 
-The install is one guided skill, drivable from either CLI — run it in whichever you
-have, and it wires both engines if both are present.
+The install is one guided skill — run it from whichever CLI you prefer. It wires
+every engine you have (asking first), so installing through one still makes the
+other pickable from the phone.
 
 From Claude Code:
 
 ```
 /plugin marketplace add ryan-scheinberg/remote-workstreams
 /plugin install remote-workstreams@remote-workstreams
-/remote-workstreams:deploy
+/remote-workstreams:deploy-rw
 ```
 
 From Codex:
@@ -109,7 +116,7 @@ codex plugin marketplace add ryan-scheinberg/remote-workstreams
 codex plugin add remote-workstreams@remote-workstreams
 ```
 
-then start `codex` and ask for `$deploy`.
+then start `codex` and ask for `$deploy-rw`.
 
 The deploy is run by the agent on your Mac. It confirms every system-touching action
 with you before running it, and it is safe to re-run — it doubles as repair. What it
@@ -117,7 +124,8 @@ does:
 
 1. Preflight: macOS, uv, tmux, and a durable git clone of this repo (defaults to `~/remote-workstreams`)
 2. Engines: detects Claude Code and Codex; with your OK, wires whichever second
-   engine is present so both are pickable from the phone
+   engine is present so both are pickable from the phone (the picker only shows
+   wired engines), and points the planner/injector at the engine you installed with
 3. Tailscale: detects it, guides install and login if missing, captures your MagicDNS name
 4. Stores your two provider keys (Deepgram, Cartesia) in the macOS Keychain
 5. Takes your 4-digit pairing PIN; only its scrypt hash is stored
@@ -173,9 +181,9 @@ uvx ruff check .   # lint
 | `remote_workstreams/server/` | FastAPI service, WebSocket, workstreams, approvals, SQLite store, auth |
 | `remote_workstreams/web/` | The static PWA |
 | `hooks/` | `ask_phone.py` — the phone-approval relay hook client |
-| `skills/` | `role-convo`, `role-stint-plan`, `role-inject`, and the deploy skill |
-| `plugins/claude-code/` | Claude Code plugin wrapper (`/remote-workstreams:deploy` + skills) |
-| `plugins/codex/` | Codex plugin wrapper (`$deploy`; carries a copy of the deploy skill — pinned by a test) |
+| `skills/` | `role-convo`, `role-stint-plan`, `role-inject`, and the `deploy-rw` skill |
+| `plugins/claude-code/` | Claude Code plugin wrapper (`/remote-workstreams:deploy-rw` + skills) |
+| `plugins/codex/` | Codex plugin wrapper (`$deploy-rw`; carries a copy of the deploy skill — pinned by a test) |
 | `tests/` | pytest, mirroring module names |
 
 ## Tailscale Funnel
