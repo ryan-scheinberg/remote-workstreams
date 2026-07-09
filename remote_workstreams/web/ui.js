@@ -78,12 +78,22 @@ export function init(h) {
     els.menu.hidden = !open;
     els.menuBtn.setAttribute("aria-expanded", String(open));
   });
-  // A convo pick can clear the conversation (engine switch), so model buttons
-  // arm-then-confirm like every other button in the app.
+  // Model buttons arm-then-confirm, and the armed state says what will happen:
+  // blue "swap?" is safe; red "clear?" wipes the convo. Mirrors the server rule:
+  // only a claude→claude convo pick switches live via /model — an engine switch
+  // or codex→codex change clears and starts fresh.
   for (const btn of els.menu.querySelectorAll(".menu-models button")) {
     const target = btn.closest(".menu-models").dataset.target;
     confirmTap(btn, () => {
       if (handlers.onSetModel(target, btn.dataset.model)) markModel(target, btn.dataset.model);
+    }, () => {
+      const sel = els.menu.querySelector(
+        '.menu-models[data-target="convo"] button.selected'
+      );
+      const clears = target === "convo" && sel && btn.dataset.model !== sel.dataset.model
+        && (btn.classList.contains("codex") || sel.classList.contains("codex"));
+      btn.dataset.arm = clears ? "clear" : "swap";
+      return clears ? "clear?" : "swap?";
     });
   }
   document.addEventListener("click", (e) => {
@@ -239,7 +249,8 @@ function sendComposer() {
 // a second within 2.6s fires, untouched it disarms itself. Idle text is
 // captured at arm time — labels may change while idle (the compact buttons
 // show context %); armedText overrides the default `${idle}?` when the idle
-// label doesn't name the action.
+// label doesn't name the action. A function armedText is evaluated at arm
+// time, for buttons whose consequence depends on current state.
 function confirmTap(btn, fire, armedText) {
   const label = btn.querySelector(".label") || btn;
   let idle = null; // non-null while armed
@@ -254,7 +265,8 @@ function confirmTap(btn, fire, armedText) {
     if (idle === null) {
       idle = label.textContent;
       btn.classList.add("armed");
-      label.textContent = armedText || `${idle}?`;
+      const armed = typeof armedText === "function" ? armedText() : armedText;
+      label.textContent = armed || `${idle}?`;
       timer = setTimeout(disarm, 2600);
       return;
     }

@@ -159,9 +159,14 @@ button {
   color: var(--teal);
   border-color: color-mix(in srgb, var(--teal) 45%, transparent);
 }
-.menu-models button.armed {
-  color: var(--amber);
-  border-color: color-mix(in srgb, var(--amber) 45%, transparent);
+/* armed copy tells the consequence: blue "swap?" is safe, red "clear?" wipes the convo */
+.menu-models button.armed[data-arm="swap"] {
+  color: var(--blue);
+  border-color: color-mix(in srgb, var(--blue) 50%, transparent);
+}
+.menu-models button.armed[data-arm="clear"] {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 50%, transparent);
 }
 
 /* state chip: the pipeline state, always visible */
