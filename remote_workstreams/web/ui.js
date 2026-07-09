@@ -84,6 +84,10 @@ export function init(h) {
   // or codex→codex change clears and starts fresh.
   for (const btn of els.menu.querySelectorAll(".menu-models button")) {
     const target = btn.closest(".menu-models").dataset.target;
+    btn.addEventListener("click", (e) => {
+      // Already the pick for this row: nothing to swap to — don't even arm.
+      if (btn.classList.contains("selected")) e.stopImmediatePropagation();
+    });
     confirmTap(btn, () => {
       if (handlers.onSetModel(target, btn.dataset.model)) markModel(target, btn.dataset.model);
     }, () => {
