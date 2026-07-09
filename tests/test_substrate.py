@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from remote_workstreams import substrate as substrate_module
 from remote_workstreams.substrate import SessionSpec, Substrate, Tmux, slug
 
 HOME = Path("/Users/alice")
@@ -129,6 +130,74 @@ async def test_spawn_resume_requires_session_id():
     spec = SessionSpec(name="convo", model="fable", effort="low", display_name="convo", resume=True)
     with pytest.raises(ValueError):
         await sub.spawn(spec)
+
+
+CODEX_UUID = "019f3e26-683e-78a2-ae60-4e811e872382"
+CODEX_ROLLOUT = f"rollout-2026-07-08T10-00-00-{CODEX_UUID}.jsonl"
+
+
+def codex_spec(**overrides) -> SessionSpec:
+    fields = dict(
+        name="convo", model="sol", effort="low", display_name="convo",
+        engine="codex", initial_prompt="$role-convo",
+    )
+    fields.update(overrides)
+    return SessionSpec(**fields)
+
+
+async def test_spawn_codex_discovers_the_rollout_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(substrate_module, "_CODEX_POLL_S", 0.01)
+    fake = FakeTmux()
+    sub = Substrate(fake, home=tmp_path)
+    day = tmp_path / ".codex/sessions/2026/07/08"
+    day.mkdir(parents=True)
+    (day / "rollout-2026-07-08T09-00-00-00000000-0000-0000-0000-000000000000.jsonl").touch()
+
+    task = asyncio.create_task(sub.spawn(codex_spec()))
+    await asyncio.sleep(0.03)  # spawn is polling; only the pre-existing file is there
+    rollout = day / CODEX_ROLLOUT
+    rollout.touch()
+    session = await task
+
+    assert session.session_id == CODEX_UUID  # codex minted it; read off the filename
+    assert session.transcript == rollout
+    assert session.window == "voice:convo"
+    expected = (
+        "command codex --model sol --config 'model_reasoning_effort=\"low\"'"
+        " --sandbox workspace-write --ask-for-approval never"
+        " --config sandbox_workspace_write.network_access=true '$role-convo'"
+    )
+    assert fake.calls == [
+        ("ensure_session", "voice"),
+        ("new_window", "voice", "convo", tmp_path),
+        ("send_line", "voice:convo", expected),
+    ]
+
+
+async def test_spawn_codex_times_out_without_a_rollout(tmp_path, monkeypatch):
+    monkeypatch.setattr(substrate_module, "_CODEX_POLL_S", 0.01)
+    monkeypatch.setattr(substrate_module, "_CODEX_BOOT_BUDGET_S", 0.03)
+    sub = Substrate(FakeTmux(), home=tmp_path)
+    with pytest.raises(TimeoutError):
+        await sub.spawn(codex_spec())
+
+
+async def test_spawn_codex_rejects_resume(tmp_path):
+    sub = Substrate(FakeTmux(), home=tmp_path)
+    with pytest.raises(ValueError):
+        await sub.spawn(codex_spec(resume=True))
+
+
+def test_codex_transcript_globs_by_session_id(tmp_path):
+    sub = Substrate(FakeTmux(), home=tmp_path)
+    missing = sub.codex_transcript(CODEX_UUID)
+    assert not missing.exists()  # placeholder path; tails tolerate a missing file
+
+    day = tmp_path / ".codex/sessions/2026/07/08"
+    day.mkdir(parents=True)
+    rollout = day / CODEX_ROLLOUT
+    rollout.touch()
+    assert sub.codex_transcript(CODEX_UUID) == rollout
 
 
 async def test_send_pastes_into_window():

@@ -13,7 +13,9 @@ from __future__ import annotations
 
 from typing import Annotated, Literal, Union
 
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter, field_validator
+
+from remote_workstreams.engines import MODELS
 
 
 class AudioFormat(BaseModel):
@@ -88,12 +90,20 @@ class CompactWorkstream(BaseModel):
 
 
 class SetModel(BaseModel):
-    """Pick a model from the settings menu. convo switches the live session;
-    workstream only affects future spawns (a running workstream keeps its model)."""
+    """Pick a model from the settings menu; the engine rides on the model name.
+    convo switches live (a same-engine Claude pick types /model, anything else
+    clears and starts fresh); workstream only affects future spawns."""
 
     type: Literal["set_model"] = "set_model"
     target: Literal["convo", "workstream"]
-    model: Literal["sonnet", "opus", "fable"]
+    model: str
+
+    @field_validator("model")
+    @classmethod
+    def _known(cls, model: str) -> str:
+        if model not in MODELS:
+            raise ValueError(f"unknown model: {model}")
+        return model
 
 
 class ClearConvo(BaseModel):
@@ -163,6 +173,7 @@ class WorkstreamCard(BaseModel):
     agents: int = 0  # subagents currently running
     context_pct: int | None = None  # context fill; None until first usage lands
     model: str = "fable"  # what it was launched with; immutable for its lifetime
+    engine: Literal["claude", "codex"] = "claude"
 
 
 class Workstreams(BaseModel):

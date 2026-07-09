@@ -106,6 +106,9 @@ class FakeSubstrate:
         self.killed: list[str] = []
         self.alive_windows: set[str] = set()
 
+    def codex_transcript(self, session_id: str) -> Path:
+        return self.transcript_dir / f"{session_id}.jsonl"
+
     async def spawn(self, spec: SessionSpec, session_id: str | None = None) -> CCSession:
         if spec.resume and session_id is None:
             raise ValueError("resume requires the existing session_id")
@@ -117,9 +120,13 @@ class FakeSubstrate:
             spec=spec,
         )
         # A spawned fake is a booted session: its transcript opens with the role
-        # greeting (what _await_ready keys on in the real system).
+        # greeting (what _await_ready keys on in the real system), in the format
+        # of the spec's engine.
         session.transcript.parent.mkdir(parents=True, exist_ok=True)
-        greeting = {"type": "assistant", "message": {"content": [{"type": "text", "text": "Ready."}]}}
+        if spec.engine == "codex":
+            greeting = {"type": "event_msg", "payload": {"type": "agent_message", "message": "Ready."}}
+        else:
+            greeting = {"type": "assistant", "message": {"content": [{"type": "text", "text": "Ready."}]}}
         session.transcript.write_text(json.dumps(greeting) + "\n")
         self.spawned.append(session)
         self.alive_windows.add(session.window)

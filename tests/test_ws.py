@@ -194,6 +194,10 @@ class RecordingManager:
     def __init__(self) -> None:
         self.calls: list[tuple] = []
         self.convo_transcript = Path("/transcripts/convo.jsonl")
+        self.stored_convo_model = "fable"
+
+    def convo_model(self) -> str:
+        return self.stored_convo_model
 
     async def new_workstream(self) -> None:
         self.calls.append(("new_workstream",))
@@ -259,6 +263,31 @@ def test_set_model_persists_and_convo_switches_live(client, fakes):
         ("push_cards",),  # workstream picks apply at spawn: no slash, just persisted
     ]
     assert fakes.bridge.slashes == ["/model sonnet"]  # only the convo session switches live
+
+
+def test_set_model_engine_switch_clears_the_convo(client, fakes):
+    manager = RecordingManager()  # current convo model: fable (claude)
+    client.app_state.runtime.workstreams = manager
+    with client.websocket_connect("/ws") as ws:
+        hello(ws)
+        ws.send_text(SetModel(target="convo", model="sol").model_dump_json())
+        # A fresh session on the new engine, announced like the Clear button.
+        assert json.loads(ws.receive_text()) == {"type": "convo_cleared"}
+        assert fakes.convo_resets == 1
+        assert manager.convo_transcript == fakes.fresh_transcript
+    assert fakes.bridge.slashes == []  # /model can't cross engines
+    assert ("set_model", "convo", "sol") in manager.calls
+
+
+def test_set_model_same_pick_changes_nothing_live(client, fakes):
+    manager = RecordingManager()
+    client.app_state.runtime.workstreams = manager
+    with client.websocket_connect("/ws") as ws:
+        hello(ws)
+        ws.send_text(SetModel(target="convo", model="fable").model_dump_json())
+        wait_for(lambda: ("push_cards",) in manager.calls)
+    assert fakes.bridge.slashes == []
+    assert fakes.convo_resets == 0
 
 
 def test_clear_convo_resets_and_repoints_the_manager(client, fakes):

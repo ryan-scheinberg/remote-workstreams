@@ -19,6 +19,7 @@ from typing import Literal, Protocol
 
 from remote_workstreams import protocol
 from remote_workstreams.adapters.stt import STTAdapter
+from remote_workstreams.engines import engine_of
 from remote_workstreams.adapters.tts import TTSAdapter
 from remote_workstreams.audio.state import PipelineState
 from remote_workstreams.server.approvals import Approvals
@@ -219,9 +220,16 @@ class ConvoRuntime:
         await self.bridge.slash("/compact")
 
     async def set_model(self, target: str, model: str) -> None:
+        current = self.workstreams.convo_model()
         self.workstreams.set_model(target, model)
-        if target == "convo":
-            await self.bridge.slash(f"/model {model}")  # the live session switches now
+        if target == "convo" and model != current:
+            if engine_of(model) == engine_of(current) == "claude":
+                await self.bridge.slash(f"/model {model}")  # the live session switches now
+            else:
+                # An engine switch (or a codex model change — codex has no typed
+                # /model path) can't retarget the live session: start fresh on
+                # the new pick. Running workstreams are untouched.
+                await self._clear_convo()
         await self.workstreams.push_cards()  # the menu reflects the pick immediately
 
     def compact_workstream(self, name: str) -> None:

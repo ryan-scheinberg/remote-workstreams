@@ -1,4 +1,4 @@
-"""ConvoBridge: the voice/UI face of the `voice:convo` Claude Code session.
+"""ConvoBridge: the voice/UI face of the `voice:convo` session (Claude Code or Codex).
 
 Writes go through the tmux substrate (send/slash); reads come from tailing the
 session's transcript JSONL. run() polls the tail and fans every entry out to
@@ -11,9 +11,14 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 
+from remote_workstreams import engines
 from remote_workstreams.audio.chunker import SentenceChunker
 from remote_workstreams.substrate import CCSession, Substrate
-from remote_workstreams.transcript import AssistantText, Entry, TranscriptTail, TurnEnd
+from remote_workstreams.transcript import AssistantText, Entry, TurnEnd
+
+
+def _tail(session: CCSession):
+    return engines.tail(session.transcript, session.spec.engine)
 
 
 class ConvoBridge:
@@ -23,7 +28,7 @@ class ConvoBridge:
         self._substrate = substrate
         self._session = session
         self._poll = poll_interval
-        self._tail = TranscriptTail(session.transcript)
+        self._tail = _tail(session)
         self._subscribers: set[asyncio.Queue[Entry | None]] = set()
         self._turn_queue: asyncio.Queue[Entry | None] | None = None
         self._unfinished = 0  # turns sent whose TurnEnd hasn't been seen yet
@@ -60,13 +65,13 @@ class ConvoBridge:
 
     def history(self, limit: int = 200) -> list[Entry]:
         """The last `limit` entries, parsed fresh from the whole transcript file."""
-        return TranscriptTail(self._session.transcript).read_new()[-limit:]
+        return _tail(self._session).read_new()[-limit:]
 
     def reset(self, session: CCSession) -> None:
         """Point at a brand-new convo session (Clear): fresh tail, any in-flight
         turn stream ends quietly. Subscribers stay attached."""
         self._session = session
-        self._tail = TranscriptTail(session.transcript)
+        self._tail = _tail(session)
         self._unfinished = 0
         if self._turn_queue is not None:
             self._turn_queue.put_nowait(None)

@@ -25,13 +25,14 @@ async def test_fresh_spawn_mints_id_and_stores_it(rig):
     assert spec.plugin_dir == PLUGIN_DIR
     assert spec.initial_prompt == "/remote-workstreams:role-convo"
     assert spec.resume is False
-    assert store.get_convo_session() == session.session_id
+    stored = store.get_convo_session()
+    assert (stored.cc_session_id, stored.engine) == (session.session_id, "claude")
     assert session.window == "voice:convo"
 
 
 async def test_alive_window_is_reused_without_spawning(rig):
     store, substrate = rig
-    store.set_convo_session("cc-stored")
+    store.set_convo_session("cc-stored", "claude")
     substrate.alive_windows.add("voice:convo")
     session = await ensure_convo(store, substrate, PLUGIN_DIR)
     assert substrate.spawned == []
@@ -43,14 +44,14 @@ async def test_alive_window_is_reused_without_spawning(rig):
 
 async def test_dead_window_respawns_with_resume(rig):
     store, substrate = rig
-    store.set_convo_session("cc-stored")  # remembered, but no window alive
+    store.set_convo_session("cc-stored", "claude")  # remembered, but no window alive
     session = await ensure_convo(store, substrate, PLUGIN_DIR)
     (spawned,) = substrate.spawned
     assert spawned is session
     assert session.session_id == "cc-stored"  # continuity across reboots
     assert session.spec.resume is True
     assert session.spec.initial_prompt is None  # the role is already in its history
-    assert store.get_convo_session() == "cc-stored"
+    assert store.get_convo_session().cc_session_id == "cc-stored"
 
 
 async def test_fresh_convo_replaces_the_live_session(rig):
@@ -63,7 +64,7 @@ async def test_fresh_convo_replaces_the_live_session(rig):
     assert session.session_id != first.session_id  # brand-new, not resumed
     assert session.spec.resume is False
     assert session.spec.initial_prompt == "/remote-workstreams:role-convo"
-    assert store.get_convo_session() == session.session_id
+    assert store.get_convo_session().cc_session_id == session.session_id
     assert store.get_marker() == 0  # the old transcript's line counts are meaningless
 
 
@@ -71,7 +72,7 @@ async def test_fresh_convo_with_nothing_stored_just_spawns(rig):
     store, substrate = rig
     session = await fresh_convo(store, substrate, PLUGIN_DIR)
     assert substrate.killed == []
-    assert store.get_convo_session() == session.session_id
+    assert store.get_convo_session().cc_session_id == session.session_id
 
 
 async def test_stored_convo_model_shapes_spawns(rig):
@@ -84,3 +85,38 @@ async def test_stored_convo_model_shapes_spawns(rig):
     session = await ensure_convo(store, substrate, PLUGIN_DIR)
     assert session.spec.resume is True
     assert session.spec.model == "sonnet"
+
+
+async def test_codex_pick_spawns_a_codex_convo(rig):
+    store, substrate = rig
+    store.set_setting("convo_model", "sol")
+    session = await ensure_convo(store, substrate, PLUGIN_DIR)
+    spec = session.spec
+    assert (spec.engine, spec.model, spec.effort) == ("codex", "sol", "low")
+    assert spec.initial_prompt == "$role-convo"  # codex skill invocation, not a slash command
+    stored = store.get_convo_session()
+    assert (stored.cc_session_id, stored.engine) == (session.session_id, "codex")
+
+
+async def test_alive_codex_window_is_reused_with_its_rollout(rig):
+    store, substrate = rig
+    store.set_setting("convo_model", "sol")
+    store.set_convo_session("codex-stored", "codex")
+    substrate.alive_windows.add("voice:convo")
+    session = await ensure_convo(store, substrate, PLUGIN_DIR)
+    assert substrate.spawned == []
+    assert session.session_id == "codex-stored"
+    assert session.transcript == substrate.codex_transcript("codex-stored")
+    assert session.spec.engine == "codex"  # the bridge picks the rollout parser off this
+
+
+async def test_dead_codex_window_starts_fresh_not_resumed(rig):
+    store, substrate = rig
+    store.set_setting("convo_model", "sol")
+    store.set_convo_session("codex-stored", "codex")  # no window alive
+    session = await ensure_convo(store, substrate, PLUGIN_DIR)
+    (spawned,) = substrate.spawned
+    assert spawned is session
+    assert session.spec.resume is False  # codex resume isn't wired
+    assert session.session_id != "codex-stored"
+    assert store.get_convo_session().cc_session_id == session.session_id

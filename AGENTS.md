@@ -1,12 +1,13 @@
 # remote-workstreams — agent orientation
 
-Voice and phone front-end over **real, interactive Claude Code sessions**: every model interaction is a CC session living as a window in the `voice` tmux session on the Mac; the iPhone is a thin PWA over Tailscale; any terminal can `tmux attach` and drive the same sessions. The README carries the design; this file carries what the next agent working on the code needs.
+Voice and phone front-end over **real, interactive agent sessions** (Claude Code, and Codex CLI as a second engine): every model interaction is a session living as a window in the `voice` tmux session on the Mac; the iPhone is a thin PWA over Tailscale; any terminal can `tmux attach` and drive the same sessions. The README carries the design; this file carries what the next agent working on the code needs.
 
 ## State
 
 - v5 built 2026-07-03, replacing the v4 pass the same week. All tests green, ruff clean.
 - **Device-tested 2026-07-05** end to end: launchd service, `tailscale serve` (tailnet-only), a paired iPhone, real voice turns over live Deepgram+Cartesia, roundtrip passed. First device testing produced two fixes now in main: media-element TTS sink (iOS ringer switch muted Web Audio) and the server-side EchoGuard (iOS echoCancellation let the agent hear itself).
 - The gated real-session test (`tests/test_live_convo.py`, skipped unless `REMOTE_WORKSTREAMS_LIVE=1`) was run once on 2026-07-03 and **passed** (haiku in tmux session `voice-qa`).
+- **Codex engine added 2026-07-08**: full plumbing (picker, spawn, cards, parsing) against placeholder model names sol/terra/luna, built without executing Codex — see the "Codex engine" section for what a first live run must prove.
 - Home: `github.com/ryan-scheinberg/remote-workstreams`, GPLv3.
 
 ## Commands
@@ -21,8 +22,10 @@ Voice and phone front-end over **real, interactive Claude Code sessions**: every
 
 ```
 remote_workstreams/
-  substrate.py     LOAD-BEARING  the ONLY tmux-aware module: spawn/inject/kill CC sessions
+  substrate.py     LOAD-BEARING  the ONLY tmux-aware module: spawn/inject/kill sessions
   transcript.py    LOAD-BEARING  the ONLY module that parses CC transcript JSONL
+  rollout.py       LOAD-BEARING  the ONLY module that parses Codex rollout JSONL
+  engines.py                     model↔engine registry; Codex 5.6 placeholder names live here
   convo.py                       ConvoBridge: voice/UI face of the voice:convo session
   bootstrap.py                   ensure_convo: reuse alive window / --resume dead / fresh spawn
   protocol.py      LOAD-BEARING  WebSocket messages client⇄server + audio formats
@@ -53,8 +56,8 @@ tests/                           pytest; mirror module names; server_fakes.py = 
 
 ## Decisions you don't get to reopen without the maintainer
 
-- **Every model interaction is a real interactive Claude Code session** — no Agent SDK, no headless/print mode, no raw model API calls. EVER.
-- Session roster: convo low effort (persistent); stint planner and injector = Opus 4.8 high (ephemeral); workstreams xhigh. Convo and workstream MODELS are user-pickable (sonnet/opus/fable) from the phone's hamburger settings menu, persisted in the store's `settings` table; the constants in `bootstrap.py`/`workstreams.py` are only the defaults when nothing is stored. Efforts are fixed per role, never pickable. Picking a convo model types `/model <name>` into the live session AND shapes future respawns; picking a workstream model only shapes future spawns — a running workstream keeps the model it launched with (shown on its card, stored per-row).
+- **Every model interaction is a real interactive session in tmux** (Claude Code or Codex CLI) — no Agent SDK, no headless/print mode, no raw model API calls. EVER.
+- Session roster: convo low effort (persistent); stint planner and injector = Opus 4.8 high (ephemeral, ALWAYS Claude Code); workstreams xhigh. Convo and workstream MODELS are user-pickable from the phone's hamburger settings menu — Claude sonnet/opus/fable, Codex sol/terra/luna; the engine rides on the model name via `engines.engine_of` — persisted in the store's `settings` table; the constants in `bootstrap.py`/`workstreams.py` are only the defaults when nothing is stored. Efforts are fixed per role, never pickable. Picking a convo model: a same-engine Claude pick types `/model <name>` into the live session; an engine switch or any Codex→Codex change clears and fresh-spawns on the new pick (`ConvoCleared` wipes the phone chat). Workstream picks only shape future spawns — a running workstream keeps the engine+model it launched with (card chip reads "Claude Fable" / "Codex Sol", stored per-row).
 - The tmux session is named `voice`; all CC sessions start at `~` so every transcript lands in one `~/.claude/projects/<home-slug>/` directory.
 - Phone client is a **PWA served via `tailscale serve`** — no native app.
 - Python 3.13 via uv, FastAPI. STT Deepgram streaming, TTS Cartesia behind adapters.
@@ -84,6 +87,18 @@ tests/                           pytest; mirror module names; server_fakes.py = 
 **Audio** — states `listening/thinking/speaking/interrupted`. Barge-in (any non-empty STT chunk while SPEAKING) kills TTS instantly and abandons the sentence stream, but the session keeps writing so the full reply still lands in chat from the transcript; a speech endpoint while THINKING supersedes the in-flight turn. The turn/interruption and SOFT-endpoint mechanics live in `pipeline.py`'s docstring — the short of it: Deepgram's VAD endpoints mid-thought, so each endpoint is held `_GRACE_S` (1.2s) before committing and resumed speech merges it into one turn (echo-blanked text does NOT cancel the hold; muting commits instantly). `merged_endpoints` on the latency line counts the folds — tune `_GRACE_S`/`ENDPOINTING_MS` from it; tests pin `_GRACE_S=0.05` via conftest.py. Latency: logger `remote_workstreams.latency`, one JSON line/turn, key metric `endpoint_to_first_audio_ms` — measure, don't promise. Two hard-won iOS constraints (2026-07) that live only here:
 - **EchoGuard's window is TIME-anchored** (first-audio send time + shipped bytes + 1.5s), so the client must play audio promptly — nothing may stall the playback element while visible. Gating force-resume on AudioContext state (plus flush-on-mic-mute) delayed playback past the window and reopened FULL echo; reverted. Force-resume is gated on page visibility only, which also stops a backgrounded frozen stream screeching.
 - **Background chat while app-switched is an iOS web limit, not a bug**: iOS suspends the page's AudioContext even in Safari with live capture. If it ever matters, the paths are a native WKWebView shell with a background-audio session (WebAuthn doesn't work in WebViews, so Face ID goes native) or an aiortc WebRTC transport.
+
+## Codex engine (built 2026-07-08 from docs + real rollout fixtures — NOT yet run live)
+
+Codex CLI (0.142.5) is the second engine. It could not be executed while this was built (free tier, no budget), so every fact below comes from `codex --help`, developers.openai.com/codex docs, and the real rollout files Codex left under `~/.codex/sessions/2026/07/07/` when it set up the harness adapter. **First live run must smoke-test: spawn discovery, `$role-convo` skill invocation from the CLI prompt arg, and rollout parsing.**
+
+- **Launch** (`substrate._spawn_codex`): `command codex --model <m> --config 'model_reasoning_effort="<effort>"' --sandbox workspace-write --ask-for-approval never --config sandbox_workspace_write.network_access=true [prompt]`. Efforts pass through unmapped (`model_reasoning_effort` accepts minimal/low/medium/high/xhigh; xhigh is model-dependent — revisit when the real 5.6 models land). `--ask-for-approval never` + write sandbox is deliberate: the phone-approval relay is a Claude Code PreToolUse hook, so a codex session prompting for approval would stall unanswered in tmux.
+- **No `--session-id` equivalent.** Codex mints its own id and writes `~/.codex/sessions/YYYY/MM/DD/rollout-<timestamp>-<uuid>.jsonl` at TUI boot; spawn snapshots the dir, types the command, and polls for the new file (`_CODEX_POLL_S`/`_CODEX_BOOT_BUDGET_S`). Session id comes off the filename; `Substrate.codex_transcript(id)` re-finds the file by glob later.
+- **Resume is NOT wired** — `codex resume <id>` exists, but whether it appends to the old rollout or forks a new file is undocumented and unverifiable without a live run. A dead codex convo window fresh-spawns (Claude keeps full `--resume` continuity).
+- **Skills**: Codex invokes skills as `$skill-name` in any prompt, including the CLI's trailing prompt arg. It discovers them in `~/.codex/skills` (proven working on 0.142.5 — the Jul 7 session saw the harness roles there; current docs also list `~/.agents/skills` and repo-level `.agents/skills`). `$role-root` comes from the harness codex adapter (`~/Documents/harness/codex/install.sh`); `$role-convo` needs this repo's skill linked once per Mac: `ln -sfn ~/Documents/remote-workstreams/skills/role-convo ~/.codex/skills/role-convo` (done on this machine 2026-07-08; belongs in the deploy skill if codex becomes a daily driver). Codex reads global instructions from `~/.codex/AGENTS.md` (the harness adapter generates it from CLAUDE.md) before every session.
+- **Rollout format** (pinned in `rollout.py`, fixtures in `tests/test_rollout.py`): `event_msg` payloads carry the user-facing stream — `user_message`, `agent_message` (phases final_answer + commentary; both are spoken/chatted, matching Claude's mid-turn text blocks), `task_started` (has `model_context_window`), `task_complete` (= TurnEnd), `token_count` (`info.last_token_usage.total_tokens` ÷ `info.model_context_window` = context %). Tool calls are `response_item` `function_call`/`custom_tool_call` lines; `response_item` `message` duplicates `agent_message` and is skipped.
+- **Placeholder swap** (when the real Sol/Terra/Luna identifiers drop): edit `CODEX_MODELS` in `remote_workstreams/engines.py` and the six picker buttons in `web/index.html`. Old DB rows keep working — the engine is stored per-row, not re-derived.
+- **Known limits until a live pass**: no phone approvals for codex workstreams (sandbox instead); no subagent count on codex cards (the rollout doesn't surface them; `active_agents` is 0); the convo Compact spinner never stops on a codex convo (`/compact` types fine but no `CompactEnd` is parsed from rollouts — event name unverified); `check_in` still works (the convo session reads the rollout file as text).
 
 ## Gotchas already known
 

@@ -310,6 +310,72 @@ async def test_set_model_shapes_new_spawns_not_running_ones(rig):
     assert notify.messages[-1].workstream_model == "opus"
 
 
+async def test_codex_pick_launches_a_codex_workstream(rig):
+    manager, store, substrate, notify, tmp_path = rig
+    manager.set_model("workstream", "luna")
+    await launch(rig)
+
+    planner, session = substrate.spawned
+    assert planner.spec.engine == "claude"  # the planner roster is fixed regardless
+    spec = session.spec
+    assert (spec.engine, spec.model, spec.effort) == ("codex", "luna", "xhigh")
+    assert spec.initial_prompt == "$role-root"  # codex skill invocation
+    assert spec.settings_file is None  # the approval relay hook is claude-only
+
+    (row,) = store.list_workstreams()
+    assert (row.model, row.engine) == ("luna", "codex")
+    (card,) = notify.messages[-1].workstreams
+    assert (card.model, card.engine) == ("luna", "codex")
+
+    manager2 = WorkstreamManager(  # engine survives a restart via the row
+        substrate,
+        store,
+        notify,
+        convo_transcript=tmp_path / "convo.jsonl",
+        data_dir=tmp_path / "data",
+        plugin_dir=Path("/plugins/claude-code"),
+        settings_file=tmp_path / "workstream-settings.json",
+    )
+    notify.messages.clear()
+    await manager2.push_cards()
+    (card,) = notify.messages[-1].workstreams
+    assert (card.model, card.engine) == ("luna", "codex")
+
+
+async def test_codex_cards_read_vitals_from_the_rollout(rig):
+    manager, store, substrate, notify, tmp_path = rig
+    manager.set_model("workstream", "luna")
+    await launch(rig)
+    session = substrate.spawned[-1]
+
+    append_transcript(
+        session.transcript,
+        transcript_line(
+            type="event_msg",
+            payload={"type": "task_started", "turn_id": "t1", "model_context_window": 200_000},
+        ),
+        transcript_line(
+            type="event_msg",
+            payload={
+                "type": "token_count",
+                "info": {"last_token_usage": {"total_tokens": 100_000},
+                         "model_context_window": 200_000},
+            },
+        ),
+    )
+    await manager.push_cards()
+    (card,) = notify.messages[-1].workstreams
+    assert (card.state, card.agents, card.context_pct) == ("thinking", 0, 50)
+
+    append_transcript(
+        session.transcript,
+        transcript_line(type="event_msg", payload={"type": "task_complete", "turn_id": "t1"}),
+    )
+    await manager.push_cards()
+    (card,) = notify.messages[-1].workstreams
+    assert card.state == "waiting"
+
+
 async def test_manager_rehydrates_from_store(rig):
     manager, store, substrate, notify, tmp_path = rig
     await launch(rig)

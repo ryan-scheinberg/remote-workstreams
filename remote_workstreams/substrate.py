@@ -1,4 +1,4 @@
-"""tmux substrate: spawn and drive real interactive Claude Code sessions.
+"""tmux substrate: spawn and drive real interactive Claude Code / Codex sessions.
 
 The only module that shells out to tmux. Writing goes through send-keys /
 paste-buffer; reading replies never happens here — transcripts are tailed by
@@ -10,9 +10,15 @@ from __future__ import annotations
 import asyncio
 import re
 import shlex
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+
+# Codex writes its rollout file at TUI boot; spawn polls the sessions dir for it.
+_CODEX_POLL_S = 0.5
+_CODEX_BOOT_BUDGET_S = 60.0
+_ROLLOUT_ID = re.compile(r"-([0-9a-f-]{36})\.jsonl$")
 
 
 def slug(path: Path | str) -> str:
@@ -26,6 +32,7 @@ class SessionSpec:
     model: str  # e.g. "fable", "opus"
     effort: str  # "low" / "high" / "xhigh"
     display_name: str
+    engine: str = "claude"  # "claude" or "codex"; the fields below are claude-only
     settings_file: Path | None = None
     plugin_dir: Path | None = None
     initial_prompt: str | None = None  # e.g. "/remote-workstreams:role-root", trailing CLI arg
@@ -102,7 +109,7 @@ class Tmux:
 
 
 class Substrate:
-    """Claude Code sessions as tmux windows: spawn, inject, check, kill."""
+    """Claude Code / Codex sessions as tmux windows: spawn, inject, check, kill."""
 
     def __init__(self, tmux: Tmux, home: Path, tmux_session: str = "voice") -> None:
         self._tmux = tmux
@@ -113,7 +120,16 @@ class Substrate:
     def transcript_dir(self) -> Path:
         return self._home / ".claude/projects" / slug(self._home)
 
+    def codex_transcript(self, session_id: str) -> Path:
+        """The rollout file for a codex session id — its filename carries a
+        creation timestamp, so it can only be found, not derived."""
+        sessions = self._home / ".codex/sessions"
+        hits = sorted(sessions.glob(f"*/*/*/rollout-*-{session_id}.jsonl"))
+        return hits[-1] if hits else sessions / f"{session_id}.jsonl"
+
     async def spawn(self, spec: SessionSpec, session_id: str | None = None) -> CCSession:
+        if spec.engine == "codex":
+            return await self._spawn_codex(spec)
         if spec.resume and session_id is None:
             raise ValueError("resume requires the existing session_id")
         session_id = session_id or str(uuid.uuid4())
@@ -147,6 +163,55 @@ class Substrate:
             transcript=self.transcript_dir / f"{session_id}.jsonl",
             spec=spec,
         )
+
+    async def _spawn_codex(self, spec: SessionSpec) -> CCSession:
+        """Codex mints its own session id and writes a rollout file at boot —
+        spawn watches the sessions dir for the new file to learn both."""
+        if spec.resume:
+            raise ValueError("codex resume is not wired; spawn fresh instead")
+        await self._tmux.ensure_session(self._session)
+        await self._tmux.new_window(self._session, spec.name, self._home)
+        window = f"{self._session}:{spec.name}"
+        argv = [
+            "codex",
+            "--model",
+            spec.model,
+            "--config",
+            f'model_reasoning_effort="{spec.effort}"',
+            # No phone-approval relay exists for codex; run autonomously inside
+            # the write sandbox instead of stalling on unanswerable prompts.
+            "--sandbox",
+            "workspace-write",
+            "--ask-for-approval",
+            "never",
+            "--config",
+            "sandbox_workspace_write.network_access=true",
+        ]
+        if spec.initial_prompt is not None:
+            argv.append(spec.initial_prompt)
+        before = set(self._rollouts())
+        await self._tmux.send_line(window, "command " + shlex.join(argv))
+        transcript = await self._await_rollout(before)
+        return CCSession(
+            session_id=_ROLLOUT_ID.search(transcript.name).group(1),
+            window=window,
+            transcript=transcript,
+            spec=spec,
+        )
+
+    def _rollouts(self) -> list[Path]:
+        files = (self._home / ".codex/sessions").glob("*/*/*/rollout-*.jsonl")
+        return [path for path in files if _ROLLOUT_ID.search(path.name)]
+
+    async def _await_rollout(self, before: set[Path]) -> Path:
+        deadline = time.monotonic() + _CODEX_BOOT_BUDGET_S
+        while True:
+            new = [path for path in self._rollouts() if path not in before]
+            if new:
+                return max(new, key=lambda path: path.stat().st_mtime)
+            if time.monotonic() >= deadline:
+                raise TimeoutError("codex wrote no rollout file after launch")
+            await asyncio.sleep(_CODEX_POLL_S)
 
     async def send(self, session: CCSession, text: str) -> None:
         await self._tmux.paste(session.window, text)

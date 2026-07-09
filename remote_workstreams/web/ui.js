@@ -297,7 +297,7 @@ export function renderWorkstreams(workstreams) {
 
   const snap = JSON.stringify(
     workstreams.map((ws) => [
-      ws.name, ws.title, ws.status, ws.state, ws.agents, ws.context_pct, ws.model,
+      ws.name, ws.title, ws.status, ws.state, ws.agents, ws.context_pct, ws.model, ws.engine,
     ])
   );
   if (snap === wsSnapshot) return; // rebuilding would kill swipe position + armed buttons
@@ -323,7 +323,7 @@ export function renderWorkstreams(workstreams) {
     head.append(dot, title);
     const model = document.createElement("span");
     model.className = "ws-model";
-    model.textContent = ws.model;
+    model.textContent = `${ws.engine} ${ws.model}`; // CSS capitalizes: "Codex Sol"
     head.append(model);
     if (ws.agents > 0) {
       const agents = document.createElement("span");

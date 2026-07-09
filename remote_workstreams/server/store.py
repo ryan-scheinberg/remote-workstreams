@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS credentials (
 );
 CREATE TABLE IF NOT EXISTS convo (
     id INTEGER PRIMARY KEY CHECK (id = 1),
-    cc_session_id TEXT NOT NULL
+    cc_session_id TEXT NOT NULL,
+    engine TEXT NOT NULL DEFAULT 'claude'
 );
 CREATE TABLE IF NOT EXISTS workstreams (
     name TEXT PRIMARY KEY,
@@ -36,7 +37,8 @@ CREATE TABLE IF NOT EXISTS workstreams (
     plan_path TEXT NOT NULL,
     created_at REAL NOT NULL,
     status TEXT NOT NULL,
-    model TEXT NOT NULL DEFAULT 'fable'
+    model TEXT NOT NULL DEFAULT 'fable',
+    engine TEXT NOT NULL DEFAULT 'claude'
 );
 CREATE TABLE IF NOT EXISTS marker (
     id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -52,6 +54,12 @@ DROP TABLE IF EXISTS transcript;
 
 
 @dataclass
+class ConvoRow:
+    cc_session_id: str
+    engine: str
+
+
+@dataclass
 class WorkstreamRow:
     name: str
     cc_session_id: str
@@ -61,6 +69,7 @@ class WorkstreamRow:
     created_at: float
     status: str
     model: str
+    engine: str
 
 
 @dataclass
@@ -98,6 +107,15 @@ class Store:
                 self._conn.execute(
                     "ALTER TABLE workstreams ADD COLUMN model TEXT NOT NULL DEFAULT 'fable'"
                 )
+            if "engine" not in ws_columns:  # pre-codex rows were all Claude Code
+                self._conn.execute(
+                    "ALTER TABLE workstreams ADD COLUMN engine TEXT NOT NULL DEFAULT 'claude'"
+                )
+            convo_columns = {row[1] for row in self._conn.execute("PRAGMA table_info(convo)")}
+            if "engine" not in convo_columns:
+                self._conn.execute(
+                    "ALTER TABLE convo ADD COLUMN engine TEXT NOT NULL DEFAULT 'claude'"
+                )
             self._conn.commit()
 
     def close(self) -> None:
@@ -120,25 +138,33 @@ class Store:
 
     # ---- convo (single row: the one persistent conversation session) ----
 
-    def get_convo_session(self) -> str | None:
-        row = self._fetchone("SELECT cc_session_id FROM convo WHERE id = 1")
-        return row["cc_session_id"] if row else None
+    def get_convo_session(self) -> ConvoRow | None:
+        row = self._fetchone("SELECT cc_session_id, engine FROM convo WHERE id = 1")
+        return ConvoRow(**dict(row)) if row else None
 
-    def set_convo_session(self, cc_session_id: str) -> None:
+    def set_convo_session(self, cc_session_id: str, engine: str) -> None:
         self._write(
-            "INSERT OR REPLACE INTO convo (id, cc_session_id) VALUES (1, ?)", (cc_session_id,)
+            "INSERT OR REPLACE INTO convo (id, cc_session_id, engine) VALUES (1, ?, ?)",
+            (cc_session_id, engine),
         )
 
     # ---- workstreams ----
 
     def add_workstream(
-        self, name: str, cc_session_id: str, window: str, title: str, plan_path: str, model: str
+        self,
+        name: str,
+        cc_session_id: str,
+        window: str,
+        title: str,
+        plan_path: str,
+        model: str,
+        engine: str,
     ) -> None:
         self._write(
             "INSERT OR REPLACE INTO workstreams"
-            " (name, cc_session_id, window, title, plan_path, created_at, status, model)"
-            " VALUES (?, ?, ?, ?, ?, ?, 'running', ?)",
-            (name, cc_session_id, window, title, plan_path, time.time(), model),
+            " (name, cc_session_id, window, title, plan_path, created_at, status, model, engine)"
+            " VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?)",
+            (name, cc_session_id, window, title, plan_path, time.time(), model, engine),
         )
 
     def list_workstreams(self) -> list[WorkstreamRow]:

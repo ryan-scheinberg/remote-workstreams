@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -107,31 +108,36 @@ def parse_line(raw: str) -> list[Entry]:
     return []
 
 
+def read_complete_lines(path: Path, offset: int) -> tuple[list[str], int]:
+    """New complete lines at byte offset; a partially written last line waits
+    for the next read."""
+    try:
+        with path.open("rb") as f:
+            f.seek(offset)
+            data = f.read()
+    except FileNotFoundError:
+        return [], offset
+    end = data.rfind(b"\n") + 1
+    if end == 0:
+        return [], offset
+    return data[:end].decode("utf-8", errors="replace").splitlines(), offset + end
+
+
 class TranscriptTail:
-    """Incremental reader over a growing transcript file.
+    """Incremental reader over a growing transcript file. Synchronous — poll
+    from async loops. `parse` swaps the line format (rollout.parse_line reads
+    Codex sessions into the same entries)."""
 
-    Byte-offset based; only consumes lines ending in a newline, so a partially
-    written last line waits for the next read. Synchronous — poll from async loops.
-    """
-
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, parse: Callable[[str], list[Entry]] = parse_line) -> None:
         self._path = path
+        self._parse = parse
         self._offset = 0
 
     def read_new(self) -> list[Entry]:
-        try:
-            with self._path.open("rb") as f:
-                f.seek(self._offset)
-                data = f.read()
-        except FileNotFoundError:
-            return []
-        end = data.rfind(b"\n") + 1
-        if end == 0:
-            return []
-        self._offset += end
+        lines, self._offset = read_complete_lines(self._path, self._offset)
         entries: list[Entry] = []
-        for raw in data[:end].decode("utf-8", errors="replace").splitlines():
-            entries.extend(parse_line(raw))
+        for raw in lines:
+            entries.extend(self._parse(raw))
         return entries
 
 
@@ -203,17 +209,8 @@ class SessionVitals:
         return min(100, round(100 * self._context_tokens / CONTEXT_WINDOW))
 
     def refresh(self) -> None:
-        try:
-            with self.path.open("rb") as f:
-                f.seek(self._offset)
-                data = f.read()
-        except FileNotFoundError:
-            return
-        end = data.rfind(b"\n") + 1
-        if end == 0:
-            return
-        self._offset += end
-        for raw in data[:end].decode("utf-8", errors="replace").splitlines():
+        lines, self._offset = read_complete_lines(self.path, self._offset)
+        for raw in lines:
             self._scan(raw)
 
     def _scan(self, raw: str) -> None:

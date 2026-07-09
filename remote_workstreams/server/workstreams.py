@@ -14,12 +14,12 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from remote_workstreams import protocol
+from remote_workstreams import engines, protocol
 from remote_workstreams.bootstrap import CONVO_MODEL
 from remote_workstreams.server.logs import log
 from remote_workstreams.server.store import Store
 from remote_workstreams.substrate import CCSession, SessionSpec, Substrate
-from remote_workstreams.transcript import AssistantText, SessionVitals, TranscriptTail
+from remote_workstreams.transcript import AssistantText
 
 logger = logging.getLogger("remote_workstreams.server.workstreams")
 
@@ -46,8 +46,9 @@ def _title(plan_text: str) -> str:
 class _Workstream:
     session: CCSession
     title: str
-    vitals: SessionVitals
+    vitals: object  # transcript.SessionVitals or rollout.RolloutVitals, per engine
     model: str
+    engine: str
     status: str = "running"
 
 
@@ -76,15 +77,19 @@ class WorkstreamManager:
         self._poll_interval = poll_interval
         self._poll_budget = poll_budget
         self._push_interval = push_interval
-        self._convo_vitals = SessionVitals(convo_transcript)
+        self._convo_vitals = self._vitals_for_convo()
         self._workstreams: dict[str, _Workstream] = {}
         for row in store.list_workstreams():
-            transcript = substrate.transcript_dir / f"{row.cc_session_id}.jsonl"
+            transcript = (
+                substrate.codex_transcript(row.cc_session_id)
+                if row.engine == "codex"
+                else substrate.transcript_dir / f"{row.cc_session_id}.jsonl"
+            )
             spec = self._workstream_spec(row.name, row.title, row.model)
             session = CCSession(row.cc_session_id, row.window, transcript, spec)
             self._workstreams[row.name] = _Workstream(
-                session=session, title=row.title, vitals=SessionVitals(transcript),
-                model=row.model, status=row.status,
+                session=session, title=row.title, vitals=engines.vitals(transcript, row.engine),
+                model=row.model, engine=row.engine, status=row.status,
             )
 
     def transcript_path(self, name: str) -> Path | None:
@@ -120,15 +125,19 @@ class WorkstreamManager:
         name = f"ws-{_slug(title)}"
         log(logger, "stint_planned", plan_id=plan_id, title=title)
         model = self.workstream_model()
+        engine = engines.engine_of(model)
         session = await self.substrate.spawn(self._workstream_spec(name, title, model))
         if not await self._await_ready(session):
             await self.substrate.kill(session)
             await self.notify(protocol.Error(message="workstream session failed to start"))
             return
         await self.substrate.send(session, text)  # the full plan is the first message
-        self.store.add_workstream(name, session.session_id, session.window, title, str(output), model)
+        self.store.add_workstream(
+            name, session.session_id, session.window, title, str(output), model, engine
+        )
         self._workstreams[name] = _Workstream(
-            session=session, title=title, vitals=SessionVitals(session.transcript), model=model
+            session=session, title=title, vitals=engines.vitals(session.transcript, engine),
+            model=model, engine=engine,
         )
         log(logger, "workstream_launched", name=name, cc_session_id=session.session_id)
         await self.push_cards()
@@ -190,7 +199,7 @@ class WorkstreamManager:
 
     async def push_cards(self) -> None:
         if self._convo_vitals.path != self.convo_transcript:  # Clear re-pointed it
-            self._convo_vitals = SessionVitals(self.convo_transcript)
+            self._convo_vitals = self._vitals_for_convo()
         self._convo_vitals.refresh()
         cards = []
         for name, ws in self._workstreams.items():
@@ -208,6 +217,7 @@ class WorkstreamManager:
                     agents=ws.vitals.active_agents,
                     context_pct=ws.vitals.context_pct,
                     model=ws.model,
+                    engine=ws.engine,
                 )
             )
         await self.notify(
@@ -230,6 +240,17 @@ class WorkstreamManager:
         log(logger, "model_set", target=target, model=model)
 
     def _workstream_spec(self, name: str, title: str, model: str) -> SessionSpec:
+        if engines.engine_of(model) == "codex":
+            # No settings file: the phone-approval relay is a Claude Code hook;
+            # codex workstreams run sandboxed instead (see substrate).
+            return SessionSpec(
+                name=name,
+                model=model,
+                effort=WORKSTREAM_EFFORT,
+                display_name=title,
+                engine="codex",
+                initial_prompt="$role-root",
+            )
         return SessionSpec(
             name=name,
             model=model,
@@ -239,6 +260,10 @@ class WorkstreamManager:
             initial_prompt="/role-root",
             remote_control=True,  # workstreams show up in the iOS Claude app too
         )
+
+    def _vitals_for_convo(self):
+        stored = self.store.get_convo_session()
+        return engines.vitals(self.convo_transcript, stored.engine if stored else "claude")
 
     def _convo_lines(self) -> int:
         try:
@@ -259,7 +284,7 @@ class WorkstreamManager:
     async def _await_ready(self, session: CCSession) -> bool:
         """A fresh session swallows pastes until its TUI is up; the role skill's
         greeting landing in the transcript is the ready signal."""
-        tail = TranscriptTail(session.transcript)
+        tail = engines.tail(session.transcript, session.spec.engine)
         deadline = time.monotonic() + self._poll_budget
         while True:
             if any(isinstance(entry, AssistantText) for entry in tail.read_new()):
