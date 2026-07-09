@@ -159,6 +159,10 @@ button {
   color: var(--teal);
   border-color: color-mix(in srgb, var(--teal) 45%, transparent);
 }
+.menu-models button.armed {
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 45%, transparent);
+}
 
 /* state chip: the pipeline state, always visible */
 
@@ -448,7 +452,6 @@ button {
   flex: none;
   font-size: 10px;
   letter-spacing: 0.06em;
-  text-transform: capitalize; /* "codex sol" reads "Codex Sol" */
   color: var(--faint);
 }
 

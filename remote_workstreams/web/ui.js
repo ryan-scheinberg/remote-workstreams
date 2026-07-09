@@ -78,12 +78,14 @@ export function init(h) {
     els.menu.hidden = !open;
     els.menuBtn.setAttribute("aria-expanded", String(open));
   });
-  els.menu.addEventListener("click", (e) => {
-    const btn = e.target.closest("button[data-model]");
-    if (!btn) return;
+  // A convo pick can clear the conversation (engine switch), so model buttons
+  // arm-then-confirm like every other button in the app.
+  for (const btn of els.menu.querySelectorAll(".menu-models button")) {
     const target = btn.closest(".menu-models").dataset.target;
-    if (handlers.onSetModel(target, btn.dataset.model)) markModel(target, btn.dataset.model);
-  });
+    confirmTap(btn, () => {
+      if (handlers.onSetModel(target, btn.dataset.model)) markModel(target, btn.dataset.model);
+    });
+  }
   document.addEventListener("click", (e) => {
     if (els.menu.hidden || els.menu.contains(e.target) || els.menuBtn.contains(e.target)) return;
     closeMenu();
@@ -297,7 +299,7 @@ export function renderWorkstreams(workstreams) {
 
   const snap = JSON.stringify(
     workstreams.map((ws) => [
-      ws.name, ws.title, ws.status, ws.state, ws.agents, ws.context_pct, ws.model, ws.engine,
+      ws.name, ws.title, ws.status, ws.state, ws.agents, ws.context_pct, ws.model,
     ])
   );
   if (snap === wsSnapshot) return; // rebuilding would kill swipe position + armed buttons
@@ -323,7 +325,7 @@ export function renderWorkstreams(workstreams) {
     head.append(dot, title);
     const model = document.createElement("span");
     model.className = "ws-model";
-    model.textContent = `${ws.engine} ${ws.model}`; // CSS capitalizes: "Codex Sol"
+    model.textContent = ws.model; // the model name alone implies the engine
     head.append(model);
     if (ws.agents > 0) {
       const agents = document.createElement("span");

@@ -14,7 +14,7 @@ from pathlib import Path
 from remote_workstreams import rollout, transcript
 
 CLAUDE_MODELS = ("sonnet", "opus", "fable")
-CODEX_MODELS = ("sol", "terra", "luna")  # Codex 5.6 placeholders
+CODEX_MODELS = ("luna", "terra", "sol")  # Codex 5.6 placeholders, small→large like the row above
 MODELS = CLAUDE_MODELS + CODEX_MODELS
 
 
