@@ -5,18 +5,62 @@ Your Mac runs everything — the audio pipeline, the sessions, the state. Your i
 a thin browser client reached over your own tailnet. No cloud infrastructure beyond
 the STT and TTS APIs; nothing between your phone and your Mac but Tailscale.
 
-The core design: **every model interaction is a real, interactive Claude Code
-session**, living as a window in one tmux session on your Mac. The phone and the
-laptop drive the *same* sessions — walk over, `tmux attach`, keep typing. Every
-session inherits your full Claude Code setup (skills, hooks, CLAUDE.md, permission
-rules) natively, and no model API key exists anywhere — all model use rides Claude
-Code auth. A persistent conversation session talks with you; planner and injector
-sessions turn that conversation into **workstreams** — execution sessions you watch
-as live cards on the phone. The conversation and every workstream launch with
+<p align="center">
+  <img src="docs/phone-main.png" width="330" alt="The conversation, a live workstream card, and the action bar">
+  &nbsp;&nbsp;
+  <img src="docs/phone-menu.png" width="330" alt="The engine and model picker">
+</p>
+
+The core design: **every model interaction is a real, interactive agent session**,
+living as a window in one tmux session on your Mac. Claude Code is the primary
+engine; OpenAI's Codex CLI is selectable per conversation and per workstream. The
+phone and the laptop drive the *same* sessions — walk over, `tmux attach`, keep
+typing. Every session inherits your full CLI setup (skills, hooks, instructions,
+permission rules) natively, and no model API key exists anywhere — all model use
+rides the CLIs' own auth. A persistent conversation session talks with you; planner
+and injector sessions turn that conversation into **workstreams** — execution
+sessions you watch as live cards on the phone. Claude sessions launch with
 `--remote-control`, so each one also shows up in the Claude iOS app — you get a
 native ping when a session goes live, and a second window into any workstream. If
 the phone drops — call, dead spot, Safari suspending — the sessions live on in tmux;
 reconnect and resume mid-conversation.
+
+## From the phone
+
+- **Talk.** Streamed STT with barge-in — speak over the assistant and it stops.
+  A composer for when you can't talk; the transcript is the chat, so tool activity
+  and final replies render from the session's own record.
+- **`+ Workstream`** marks the conversation since the last launch, has a planner
+  session distill it into a stint plan, and launches an execution session on it —
+  one button, no review step.
+- **Live cards**, one per workstream: state-colored title (green waiting, blue
+  waiting with subagents running, amber mid-turn, red errored or gone), subagent
+  count, and a context meter that doubles as the Compact button. `Send latest`
+  routes the newest conversation delta through an injector session into that
+  workstream; `Check in` has the conversation read the workstream's transcript and
+  answer out loud.
+- **Approvals.** Destructive shell commands inside Claude workstreams relay to the
+  phone as approve/deny cards; everything else runs without interruption.
+- **The picker** (hamburger) sets the conversation's and future workstreams' engine
+  and model. Every button on the phone arms-then-confirms — the armed label states
+  the consequence (blue `swap?` is safe, red `clear?` wipes the conversation).
+
+## Engines
+
+The model name carries the engine: pick a Claude model and the session is Claude
+Code; pick a Codex model and it's Codex CLI (model lists live in
+`remote_workstreams/engines.py`). A Claude-to-Claude conversation pick switches the
+live session in place; switching engines (or between Codex models) starts a fresh
+conversation, announced before you confirm. Running workstreams always keep the
+engine and model they launched with.
+
+Engine differences that show: Codex has no known-in-advance session id, so the
+service discovers each session's rollout file on disk; Codex workstreams run inside
+Codex's own `workspace-write` sandbox with approval prompts disabled instead of the
+phone-approval relay (which is a Claude Code hook); and Codex sessions don't resume
+across service restarts — a dead Codex conversation window starts fresh. Codex
+support is new plumbing, built against the documented CLI and real session files —
+treat it as beta until it has miles on it.
 
 ## Topology
 
@@ -25,8 +69,9 @@ iPhone (Safari PWA) ──WebSocket/HTTPS over Tailscale──> Mac
                                                          ├─ FastAPI service (launchd, persistent)
                                                          │   ├─ Audio pipeline: Deepgram STT ⇄ VAD ⇄ Cartesia TTS
                                                          │   ├─ tmux session "voice": convo + workstream
-                                                         │   │    Claude Code sessions (attach from any terminal)
-                                                         │   ├─ Transcript tailing: Claude Code JSONL is the chat
+                                                         │   │    sessions — Claude Code or Codex CLI
+                                                         │   │    (attach from any terminal)
+                                                         │   ├─ Transcript tailing: the session's JSONL is the chat
                                                          │   ├─ Store: SQLite (credentials, session ids, markers)
                                                          │   └─ Static PWA
                                                          └─ tailscale serve (TLS on the MagicDNS name)
@@ -41,6 +86,8 @@ iPhone (Safari PWA) ──WebSocket/HTTPS over Tailscale──> Mac
   [Cartesia](https://play.cartesia.ai) (streaming TTS)
 - Claude Code on the Mac, logged in (every session is your existing Claude Code setup —
   skills, hooks, MCP servers and all)
+- Optional: [Codex CLI](https://developers.openai.com/codex) installed and logged in,
+  for the Codex engine
 
 ## Install
 
@@ -84,7 +131,7 @@ as repair. What it does:
 ## Latency
 
 Measured, not promised: every turn logs endpoint → transcript → first-sentence →
-first-audio timestamps. Replies come from a real Claude Code session, so expect the
+first-audio timestamps. Replies come from a real interactive session, so expect the
 pace of a thoughtful colleague, not a kiosk — sentence-chunked streaming TTS starts
 speaking as soon as a reply lands, and barge-in (speak over the assistant and it
 stops) keeps you in control.
@@ -99,8 +146,10 @@ uvx ruff check .   # lint
 
 | Path | What it is |
 |---|---|
-| `remote_workstreams/substrate.py` | tmux substrate — spawn/inject/kill Claude Code sessions as windows |
-| `remote_workstreams/transcript.py` | Claude Code transcript JSONL parsing (the only format-aware module) |
+| `remote_workstreams/substrate.py` | tmux substrate — spawn/inject/kill Claude Code and Codex sessions as windows |
+| `remote_workstreams/transcript.py` | Claude Code transcript JSONL parsing (the only CC-format-aware module) |
+| `remote_workstreams/rollout.py` | Codex rollout JSONL parsing (the only Codex-format-aware module) |
+| `remote_workstreams/engines.py` | model ↔ engine registry — which models run on which CLI |
 | `remote_workstreams/convo.py` | ConvoBridge — the voice/UI face of the persistent conversation session |
 | `remote_workstreams/protocol.py` | WebSocket messages client ⇄ server, audio formats |
 | `remote_workstreams/config.py` | Runtime config; `REMOTE_WORKSTREAMS_*` env overrides |
