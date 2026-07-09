@@ -9,3 +9,4 @@ dist/
 .worktrees/
 .pytest_cache/
 .ruff_cache/
+full-audit.md
