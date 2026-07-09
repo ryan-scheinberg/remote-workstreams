@@ -156,6 +156,7 @@ class FakePipeline:
         self.fed: list[bytes] = []
         self.texts: list[str] = []
         self.muted = False
+        self.hushes = 0
         self.closed = False
         self._done = asyncio.Event()
 
@@ -175,6 +176,9 @@ class FakePipeline:
 
     def set_muted(self, muted: bool) -> None:
         self.muted = muted
+
+    async def hush(self) -> None:
+        self.hushes += 1
 
     async def close(self) -> None:
         self.closed = True

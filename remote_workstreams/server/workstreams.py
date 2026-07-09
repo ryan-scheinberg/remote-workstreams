@@ -1,6 +1,7 @@
 """Workstreams: the execution sessions and the ephemeral planner/injector
-passthroughs that feed them. All are real Claude Code sessions in tmux; plans
-and directives travel through files the ephemeral sessions write, polled here.
+passthroughs that feed them. All are real agent sessions (Claude Code or Codex)
+in tmux; plans and directives travel through files the ephemeral sessions
+write, polled here.
 """
 
 from __future__ import annotations
@@ -24,8 +25,9 @@ from remote_workstreams.transcript import AssistantText
 logger = logging.getLogger("remote_workstreams.server.workstreams")
 
 # Session roster: ephemeral passthroughs think hard, workstreams execute.
-# WORKSTREAM_MODEL is only the default — the settings menu's pick (in the store)
-# wins for new spawns; effort is fixed regardless of model.
+# Models are only defaults — store settings win (the menu sets workstream_model;
+# deploy sets planner_model/injector_model to the install engine's thinker, e.g.
+# terra on a Codex-driven install). Effort is fixed regardless of model.
 PLANNER_MODEL, PLANNER_EFFORT = "opus", "high"
 INJECTOR_MODEL, INJECTOR_EFFORT = "opus", "high"
 WORKSTREAM_MODEL, WORKSTREAM_EFFORT = "fable", "xhigh"
@@ -104,16 +106,12 @@ class WorkstreamManager:
         plan_id = uuid.uuid4().hex[:8]
         output = self._data_dir / "plans" / f"plan-{plan_id}.md"
         output.parent.mkdir(parents=True, exist_ok=True)
-        spec = SessionSpec(
-            name="plan",
-            model=PLANNER_MODEL,
-            effort=PLANNER_EFFORT,
-            display_name="plan",
-            plugin_dir=self._plugin_dir,
-            initial_prompt=(
-                f"/remote-workstreams:role-stint-plan convo={self.convo_transcript}"
-                f" since_line={since} output={output}"
-            ),
+        spec = self._passthrough_spec(
+            "plan",
+            "role-stint-plan",
+            self.planner_model(),
+            PLANNER_EFFORT,
+            f"convo={self.convo_transcript} since_line={since} output={output}",
         )
         planner = await self.substrate.spawn(spec)
         text = await self._await_file(output)
@@ -161,16 +159,13 @@ class WorkstreamManager:
         current = self._convo_lines()
         output = self._data_dir / "injects" / f"inject-{uuid.uuid4().hex[:8]}.md"
         output.parent.mkdir(parents=True, exist_ok=True)
-        spec = SessionSpec(
-            name="inject",
-            model=INJECTOR_MODEL,
-            effort=INJECTOR_EFFORT,
-            display_name="inject",
-            plugin_dir=self._plugin_dir,
-            initial_prompt=(
-                f"/remote-workstreams:role-inject convo={self.convo_transcript} since_line={since}"
-                f" workstream={ws.session.transcript} output={output}"
-            ),
+        spec = self._passthrough_spec(
+            "inject",
+            "role-inject",
+            self.injector_model(),
+            INJECTOR_EFFORT,
+            f"convo={self.convo_transcript} since_line={since}"
+            f" workstream={ws.session.transcript} output={output}",
         )
         session = await self.substrate.spawn(spec)
         directive = await self._await_file(output)
@@ -226,6 +221,7 @@ class WorkstreamManager:
                 convo_context_pct=self._convo_vitals.context_pct,
                 convo_model=self.convo_model(),
                 workstream_model=self.workstream_model(),
+                models=self.enabled_models(),
             )
         )
 
@@ -235,9 +231,44 @@ class WorkstreamManager:
     def workstream_model(self) -> str:
         return self.store.get_setting("workstream_model") or WORKSTREAM_MODEL
 
+    def planner_model(self) -> str:
+        return self.store.get_setting("planner_model") or PLANNER_MODEL
+
+    def injector_model(self) -> str:
+        return self.store.get_setting("injector_model") or INJECTOR_MODEL
+
+    def enabled_models(self) -> list[str]:
+        """The models the phone's picker offers: only engines wired on this box.
+        The deploy skill sets the `engines` setting; unset means both."""
+        names = (self.store.get_setting("engines") or "claude codex").split()
+        return [m for m in engines.MODELS if engines.engine_of(m) in names]
+
     def set_model(self, target: str, model: str) -> None:
         self.store.set_setting(f"{target}_model", model)
         log(logger, "model_set", target=target, model=model)
+
+    def _passthrough_spec(
+        self, name: str, skill: str, model: str, effort: str, args: str
+    ) -> SessionSpec:
+        """An ephemeral planner/injector spec. Claude gets the skill from the
+        plugin dir; codex finds it in ~/.codex/skills (deploy wires the symlinks)."""
+        if engines.engine_of(model) == "codex":
+            return SessionSpec(
+                name=name,
+                model=model,
+                effort=effort,
+                display_name=name,
+                engine="codex",
+                initial_prompt=f"${skill} {args}",
+            )
+        return SessionSpec(
+            name=name,
+            model=model,
+            effort=effort,
+            display_name=name,
+            plugin_dir=self._plugin_dir,
+            initial_prompt=f"/remote-workstreams:{skill} {args}",
+        )
 
     def _workstream_spec(self, name: str, title: str, model: str) -> SessionSpec:
         if engines.engine_of(model) == "codex":

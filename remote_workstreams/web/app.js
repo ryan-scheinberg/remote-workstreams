@@ -36,6 +36,7 @@ ui.init({
   onPair: pair,
   onLock: lock,
   onMute: toggleMute,
+  onHush: hush,
   onText: (text) => send({ type: "text_input", text }),
   onNewWorkstream: () => send({ type: "new_workstream" }),
   onCompact: () => send({ type: "compact" }),
@@ -239,6 +240,7 @@ function handleMessage(msg) {
       ui.renderWorkstreams(msg.workstreams);
       ui.setConvoContext(msg.convo_context_pct);
       ui.setModels(msg.convo_model, msg.workstream_model);
+      if (msg.models) ui.setEnabledModels(msg.models); // absent from older servers
       break;
     case "convo_cleared":
       ui.clearChat();
@@ -274,6 +276,14 @@ function toggleMute() {
   ui.setMuted(app.muted);
   if (app.muted) ui.setLevel(0);
   send({ type: "mute", muted: app.muted });
+}
+
+// Hush: stop hearing the current reply. Flush the local buffer first — it can
+// hold seconds the server already sent — then have the server abort the turn
+// so the rest is never synthesized. The reply still lands in chat.
+function hush() {
+  app.playback?.flush();
+  send({ type: "hush" });
 }
 
 // ---- iOS lifecycle: Safari suspends the tab; treat return like a dropped phone ----

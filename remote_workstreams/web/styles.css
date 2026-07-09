@@ -593,6 +593,38 @@ button {
 }
 #btn-mute[aria-pressed="true"] .mute-slash { display: block; }
 
+/* Hush fills the resting row where the input would be: one tap, silence. */
+#btn-hush {
+  flex: 1;
+  padding: 15px 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--dim);
+}
+#btn-hush:active { background: var(--elev); color: var(--text); }
+#btn-hush[hidden] { display: none; }
+
+#btn-keyboard {
+  width: 52px;
+  height: 52px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--elev);
+  color: var(--text);
+}
+#btn-keyboard svg { width: 22px; height: 22px; }
+#btn-keyboard[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--teal) 45%, transparent);
+  color: var(--teal);
+}
+
+#composer-input[hidden] { display: none; }
+
 #composer-input {
   flex: 1;
   min-width: 0;
@@ -619,6 +651,7 @@ button {
   place-items: center;
 }
 #composer-send:active { background: var(--elev); }
+#composer-send[hidden] { display: none; } /* [hidden] loses to display:grid without this */
 
 /* ---------- toast ---------- */
 

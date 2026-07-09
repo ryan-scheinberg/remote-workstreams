@@ -226,6 +226,56 @@ async def test_barge_in() -> None:
     await asyncio.wait_for(task, 1)
 
 
+async def test_hush_silences_the_current_reply() -> None:
+    """The Hush button: a barge-in without the speech. The turn aborts (remaining
+    sentences never reach TTS) and the pipeline goes straight back to LISTENING."""
+    convo = FakeConvo(replies=[["First sentence.", "Second sentence."]])
+    tts = FakeTTS(hold_first=True)
+    pipeline, stt, _, _, sink = build(convo=convo, tts=tts)
+    task = asyncio.create_task(pipeline.run())
+
+    stt.push(chunk("start the demo", is_final=True, speech_final=True))
+    await wait_for(lambda: SPEAKING in sink.states and sink.audio_chunks)
+
+    audio_before = len(sink.audio_chunks)
+    await pipeline.hush()
+
+    assert sink.states[-1] is LISTENING  # not INTERRUPTED — no user speech followed
+    assert tts.cancels >= 1
+    assert convo.closed_mid_turn  # the sentence stream was abandoned cleanly
+    assert tts.synthesized == ["First sentence."]  # the second was never synthesized
+    await asyncio.sleep(0.02)
+    assert len(sink.audio_chunks) == audio_before  # audio stopped immediately
+
+    await pipeline.close()
+    await asyncio.wait_for(task, 1)
+
+
+async def test_hush_during_thinking_cancels_the_pending_reply() -> None:
+    gate = asyncio.Event()  # never set: the turn stays parked pre-sentence
+    convo = FakeConvo(first_turn_gate=gate)
+    pipeline, stt, tts, _, sink = build(convo=convo)
+    task = asyncio.create_task(pipeline.run())
+
+    stt.push(chunk("hello there", is_final=True, speech_final=True))
+    await wait_for(lambda: sink.states[-1:] == [THINKING])
+    await pipeline.hush()
+
+    assert sink.states == [THINKING, LISTENING]
+    assert tts.synthesized == []
+    await pipeline.close()
+    await asyncio.wait_for(task, 1)
+
+
+async def test_hush_while_listening_is_a_no_op() -> None:
+    pipeline, stt, tts, convo, sink = build()
+    task = asyncio.create_task(pipeline.run())
+    await pipeline.hush()
+    assert sink.states == []  # nothing in flight, no state churn
+    await pipeline.close()
+    await asyncio.wait_for(task, 1)
+
+
 async def test_barge_in_noise_returns_to_listening() -> None:
     tts = FakeTTS(hold_first=True)
     pipeline, stt, _, convo, sink = build(convo=FakeConvo(replies=[["Reply."]]), tts=tts)

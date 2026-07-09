@@ -316,7 +316,7 @@ async def test_codex_pick_launches_a_codex_workstream(rig):
     await launch(rig)
 
     planner, session = substrate.spawned
-    assert planner.spec.engine == "claude"  # the planner roster is fixed regardless
+    assert planner.spec.engine == "claude"  # planner defaults to claude; its own setting moves it
     spec = session.spec
     assert (spec.engine, spec.model, spec.effort) == ("codex", "luna", "xhigh")
     assert spec.initial_prompt == "$role-root"  # codex skill invocation
@@ -340,6 +340,42 @@ async def test_codex_pick_launches_a_codex_workstream(rig):
     await manager2.push_cards()
     (card,) = notify.messages[-1].workstreams
     assert (card.model, card.engine) == ("luna", "codex")
+
+
+async def test_planner_and_injector_follow_their_store_settings(rig):
+    """A Codex-driven install sets planner_model/injector_model (e.g. terra), so
+    + Workstream and Send latest work without Claude Code on the box."""
+    manager, store, substrate, notify, tmp_path = rig
+    store.set_setting("planner_model", "terra")
+    store.set_setting("injector_model", "terra")
+
+    await launch(rig)
+    planner = substrate.spawned[-2].spec  # [-1] is the workstream it launched
+    assert (planner.engine, planner.model, planner.effort) == ("codex", "terra", "high")
+    assert planner.plugin_dir is None  # codex finds the role skills in ~/.codex/skills
+    assert planner.initial_prompt.startswith("$role-stint-plan convo=")
+
+    task = asyncio.create_task(manager.send_to_workstream("ws-wire-the-auth-flow"))
+    await wait_for_spawn(substrate, count=3)
+    injector = substrate.spawned[-1].spec
+    assert (injector.engine, injector.model, injector.effort) == ("codex", "terra", "high")
+    assert injector.initial_prompt.startswith("$role-inject convo=")
+    output_path(injector).write_text("directive")
+    await task
+
+
+async def test_push_models_lists_only_wired_engines(rig):
+    manager, store, substrate, notify, tmp_path = rig
+    await manager.push_cards()
+    assert notify.messages[-1].models == ["sonnet", "opus", "fable", "luna", "terra", "sol"]
+
+    store.set_setting("engines", "codex")
+    await manager.push_cards()
+    assert notify.messages[-1].models == ["luna", "terra", "sol"]
+
+    store.set_setting("engines", "claude")
+    await manager.push_cards()
+    assert notify.messages[-1].models == ["sonnet", "opus", "fable"]
 
 
 async def test_codex_cards_read_vitals_from_the_rollout(rig):

@@ -20,6 +20,8 @@ const els = {
   compactBtn: $("btn-compact"),
   clearBtn: $("btn-clear"),
   muteBtn: $("btn-mute"),
+  hushBtn: $("btn-hush"),
+  keyboardBtn: $("btn-keyboard"),
   composerInput: $("composer-input"),
   composerSend: $("composer-send"),
   toast: $("toast"),
@@ -59,6 +61,9 @@ export function init(h) {
     handlers.onPair(els.pairPin.value.trim());
   });
   els.muteBtn.addEventListener("click", () => handlers.onMute());
+  // Silencing must be instant, like Lock — no confirm tap.
+  els.hushBtn.addEventListener("click", () => handlers.onHush());
+  els.keyboardBtn.addEventListener("click", () => setComposerOpen(els.composerInput.hidden));
   els.composerSend.addEventListener("click", sendComposer);
   els.composerInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendComposer();
@@ -118,11 +123,29 @@ function closeMenu() {
 function markModel(target, model) {
   const seg = els.menu.querySelector(`.menu-models[data-target="${target}"]`);
   for (const btn of seg.children) btn.classList.toggle("selected", btn.dataset.model === model);
+  applyModelVisibility();
 }
 
 export function setModels(convo, workstream) {
   markModel("convo", convo);
   markModel("workstream", workstream);
+}
+
+// Only models whose engine is wired on the Mac get buttons (the server sends
+// the list). A selected model always stays visible, even misconfigured.
+let enabledModels = null; // null = everything, until the first push arrives
+
+export function setEnabledModels(models) {
+  enabledModels = models;
+  applyModelVisibility();
+}
+
+function applyModelVisibility() {
+  if (!enabledModels) return;
+  for (const btn of els.menu.querySelectorAll(".menu-models button")) {
+    btn.hidden = !enabledModels.includes(btn.dataset.model)
+      && !btn.classList.contains("selected");
+  }
 }
 
 // ---- screens ----
@@ -240,6 +263,16 @@ export function clearChat() {
 }
 
 // ---- composer ----
+
+// Typing is the rare path (links, mostly): the input hides behind the keyboard
+// button, and the Hush pill holds its spot in the resting row.
+function setComposerOpen(open) {
+  els.composerInput.hidden = !open;
+  els.composerSend.hidden = !open;
+  els.hushBtn.hidden = open;
+  els.keyboardBtn.setAttribute("aria-pressed", String(open));
+  if (open) els.composerInput.focus();
+}
 
 function sendComposer() {
   const text = els.composerInput.value.trim();

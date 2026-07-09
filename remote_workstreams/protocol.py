@@ -50,6 +50,14 @@ class Mute(BaseModel):
     muted: bool
 
 
+class Hush(BaseModel):
+    """Silence the current reply: the pipeline aborts the in-flight turn, so
+    sentences not yet synthesized never reach TTS. The session keeps writing —
+    the full reply still lands in chat from the transcript."""
+
+    type: Literal["hush"] = "hush"
+
+
 class NewWorkstream(BaseModel):
     """Plan a stint from the conversation since the last marker and launch it —
     one button, no plan review on the phone."""
@@ -123,6 +131,7 @@ ClientMessage = Annotated[
         Hello,
         TextInput,
         Mute,
+        Hush,
         NewWorkstream,
         SendToWorkstream,
         CheckIn,
@@ -182,6 +191,7 @@ class Workstreams(BaseModel):
     convo_context_pct: int | None = None  # the convo session's fill, for its Compact button
     convo_model: str = "fable"  # current picks, so the settings menu shows them
     workstream_model: str = "fable"
+    models: list[str] = list(MODELS)  # engines wired on this box; the picker hides the rest
 
 
 class ConvoCleared(BaseModel):

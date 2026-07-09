@@ -11,6 +11,9 @@ Turn/interruption policy:
   Client-side echoCancellation keeps the assistant's own voice out of the mic.
 - Barge-in silences TTS and abandons the sentence stream, but the session keeps
   writing — the full reply still lands in chat from the transcript.
+- hush() is a barge-in without the speech: the phone's Hush button aborts the
+  in-flight turn (nothing further synthesized — that's the Cartesia $ saved)
+  and returns to LISTENING.
 - User speech that endpoints while a turn is still THINKING supersedes it: the
   in-flight turn is cancelled and a fresh turn runs with the new text.
 - Endpoints are SOFT: Deepgram's VAD reads quiet trailing speech as silence and
@@ -149,6 +152,15 @@ class AudioPipeline:
             return
         timings = TurnTimings(kind="text", transcript_ts=time.time())
         await self._start_turn(lambda: self.convo.turn(text), timings)
+
+    async def hush(self) -> None:
+        """The phone's Hush button: silence the current reply. Aborting the turn
+        cancels the in-flight TTS stream and never synthesizes the remaining
+        sentences; the session keeps writing, so the full reply still lands in
+        chat. A barge-in without the speech, ending in LISTENING."""
+        if self._sm.state in (PipelineState.THINKING, PipelineState.SPEAKING):
+            await self._abort_turn()
+            await self._set_state(PipelineState.LISTENING)
 
     def set_muted(self, muted: bool) -> None:
         self.muted = muted
