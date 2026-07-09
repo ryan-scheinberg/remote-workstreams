@@ -1,6 +1,7 @@
 # remote-workstreams
 
-Hold a natural spoken conversation with Claude Code while it does real agentic work.
+Hold a natural spoken conversation with a coding agent — Claude Code or OpenAI's
+Codex — while it does real agentic work.
 Your Mac runs everything — the audio pipeline, the sessions, the state. Your iPhone is
 a thin browser client reached over your own tailnet. No cloud infrastructure beyond
 the STT and TTS APIs; nothing between your phone and your Mac but Tailscale.
@@ -12,10 +13,10 @@ the STT and TTS APIs; nothing between your phone and your Mac but Tailscale.
 </p>
 
 The core design: **every model interaction is a real, interactive agent session**,
-living as a window in one tmux session on your Mac. Claude Code is the primary
-engine; OpenAI's Codex CLI is selectable per conversation and per workstream. The
-phone and the laptop drive the *same* sessions — walk over, `tmux attach`, keep
-typing. Every session inherits your full CLI setup (skills, hooks, instructions,
+living as a window in one tmux session on your Mac. Claude Code and Codex CLI are
+both first-class engines — either alone is a complete install, and with both you
+pick per conversation and per workstream. The phone and the laptop drive the *same*
+sessions — walk over, `tmux attach`, keep typing. Every session inherits your full CLI setup (skills, hooks, instructions,
 permission rules) natively, and no model API key exists anywhere — all model use
 rides the CLIs' own auth. A persistent conversation session talks with you; planner
 and injector sessions turn that conversation into **workstreams** — execution
@@ -29,9 +30,9 @@ reconnect and resume mid-conversation.
 
 - **Talk.** Streamed STT with barge-in — speak over the assistant and it stops.
   The transcript is the chat, so tool activity and final replies render from the
-  session's own record. A `Hush` button silences the rest of the current reply
-  (you're reading it anyway — the unspoken sentences are never synthesized, so
-  they cost nothing); a keyboard button unfolds a composer for when you can't talk.
+  session's own record. A hush toggle mutes the speaker for reading in public —
+  replies land in chat and are never synthesized, so silence costs nothing; a
+  keyboard pill unfolds into a composer for when you can't talk at all.
 - **`+ Workstream`** marks the conversation since the last launch, has a planner
   session distill it into a stint plan, and launches an execution session on it —
   one button, no review step.
@@ -90,10 +91,11 @@ iPhone (Safari PWA) ──WebSocket/HTTPS over Tailscale──> Mac
 - A [Tailscale](https://tailscale.com) account, with the Mac and iPhone on the same tailnet
 - API keys: [Deepgram](https://console.deepgram.com) (streaming STT),
   [Cartesia](https://play.cartesia.ai) (streaming TTS)
-- Claude Code on the Mac, logged in (every session is your existing Claude Code setup —
-  skills, hooks, MCP servers and all)
-- Optional: [Codex CLI](https://developers.openai.com/codex) installed and logged in,
-  for the Codex engine
+- At least one coding agent CLI on the Mac, logged in:
+  [Claude Code](https://claude.com/claude-code) and/or
+  [Codex CLI](https://developers.openai.com/codex). Either alone is a complete
+  install; every session is your existing CLI setup — skills, hooks, MCP servers
+  and all
 
 ## Install
 

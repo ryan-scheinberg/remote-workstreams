@@ -61,9 +61,13 @@ export function init(h) {
     handlers.onPair(els.pairPin.value.trim());
   });
   els.muteBtn.addEventListener("click", () => handlers.onMute());
-  // Silencing must be instant, like Lock — no confirm tap.
+  // Both mutes must be instant, like Lock — no confirm tap.
   els.hushBtn.addEventListener("click", () => handlers.onHush());
-  els.keyboardBtn.addEventListener("click", () => setComposerOpen(els.composerInput.hidden));
+  els.keyboardBtn.addEventListener("click", () => setComposerOpen(true));
+  els.composerInput.addEventListener("blur", () => {
+    // Dismissing the keyboard with nothing typed folds the input away.
+    if (!els.composerInput.value.trim()) setComposerOpen(false);
+  });
   els.composerSend.addEventListener("click", sendComposer);
   els.composerInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendComposer();
@@ -216,6 +220,10 @@ export function setMuted(muted) {
   els.muteBtn.setAttribute("aria-pressed", String(muted));
 }
 
+export function setHushed(hushed) {
+  els.hushBtn.setAttribute("aria-pressed", String(hushed));
+}
+
 // ---- chat ----
 
 function pinned(el) {
@@ -264,13 +272,12 @@ export function clearChat() {
 
 // ---- composer ----
 
-// Typing is the rare path (links, mostly): the input hides behind the keyboard
-// button, and the Hush pill holds its spot in the resting row.
+// Typing is the rare path (links, mostly): at rest the keyboard pill stands in
+// for the input; tapping it swaps in the real input + send.
 function setComposerOpen(open) {
   els.composerInput.hidden = !open;
   els.composerSend.hidden = !open;
-  els.hushBtn.hidden = open;
-  els.keyboardBtn.setAttribute("aria-pressed", String(open));
+  els.keyboardBtn.hidden = open;
   if (open) els.composerInput.focus();
 }
 

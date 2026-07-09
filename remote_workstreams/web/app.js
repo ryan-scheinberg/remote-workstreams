@@ -21,6 +21,7 @@ const app = {
   unlockPromise: null,
   session: null, // in-memory session token; null = locked
   muted: false,
+  hushed: false, // speaker mute: replies land in chat, never spoken
   ready: false,
   started: false, // a logged-in session is live
   attempts: 0,
@@ -36,7 +37,7 @@ ui.init({
   onPair: pair,
   onLock: lock,
   onMute: toggleMute,
-  onHush: hush,
+  onHush: toggleHush,
   onText: (text) => send({ type: "text_input", text }),
   onNewWorkstream: () => send({ type: "new_workstream" }),
   onCompact: () => send({ type: "compact" }),
@@ -162,6 +163,7 @@ function connect() {
     // Reconnects re-present the in-memory session token; no re-auth while it lives.
     ws.send(JSON.stringify({ type: "hello", credential: app.session }));
     if (app.muted) ws.send(JSON.stringify({ type: "mute", muted: true }));
+    if (app.hushed) ws.send(JSON.stringify({ type: "hush", muted: true }));
   };
 
   ws.onmessage = (e) => {
@@ -278,12 +280,14 @@ function toggleMute() {
   send({ type: "mute", muted: app.muted });
 }
 
-// Hush: stop hearing the current reply. Flush the local buffer first — it can
-// hold seconds the server already sent — then have the server abort the turn
-// so the rest is never synthesized. The reply still lands in chat.
-function hush() {
-  app.playback?.flush();
-  send({ type: "hush" });
+// Hush: the speaker mute. While on, the server never synthesizes replies (they
+// land in chat instead). Flush the local buffer on the way in — it can hold
+// seconds of audio the server already sent.
+function toggleHush() {
+  app.hushed = !app.hushed;
+  ui.setHushed(app.hushed);
+  if (app.hushed) app.playback?.flush();
+  send({ type: "hush", muted: app.hushed });
 }
 
 // ---- iOS lifecycle: Safari suspends the tab; treat return like a dropped phone ----

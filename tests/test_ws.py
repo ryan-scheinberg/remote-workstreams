@@ -169,12 +169,12 @@ def test_binary_feeds_pipeline_and_mute_routes(client, fakes):
         hello(ws)
         ws.send_bytes(b"\x00\x01")
         ws.send_text(Mute(muted=True).model_dump_json())
-        ws.send_text(Hush().model_dump_json())
+        ws.send_text(Hush(muted=True).model_dump_json())
         run_turn(ws, "sync")  # round-trip so the frames above are processed
         pipeline = fakes.pipelines[-1]
         assert pipeline.fed == [b"\x00\x01"]
         assert pipeline.muted is True
-        assert pipeline.hushes == 1
+        assert pipeline.hushed is True
 
 
 def test_second_connection_takes_over(client, fakes):

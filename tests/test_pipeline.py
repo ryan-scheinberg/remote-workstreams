@@ -226,9 +226,9 @@ async def test_barge_in() -> None:
     await asyncio.wait_for(task, 1)
 
 
-async def test_hush_silences_the_current_reply() -> None:
-    """The Hush button: a barge-in without the speech. The turn aborts (remaining
-    sentences never reach TTS) and the pipeline goes straight back to LISTENING."""
+async def test_hush_mid_reply_silences_it_now() -> None:
+    """Flipping the speaker mute on while SPEAKING aborts the audio: remaining
+    sentences never reach TTS and the pipeline lands in LISTENING."""
     convo = FakeConvo(replies=[["First sentence.", "Second sentence."]])
     tts = FakeTTS(hold_first=True)
     pipeline, stt, _, _, sink = build(convo=convo, tts=tts)
@@ -238,9 +238,9 @@ async def test_hush_silences_the_current_reply() -> None:
     await wait_for(lambda: SPEAKING in sink.states and sink.audio_chunks)
 
     audio_before = len(sink.audio_chunks)
-    await pipeline.hush()
+    pipeline.set_hushed(True)
+    await wait_for(lambda: sink.states[-1] is LISTENING)  # not INTERRUPTED
 
-    assert sink.states[-1] is LISTENING  # not INTERRUPTED — no user speech followed
     assert tts.cancels >= 1
     assert convo.closed_mid_turn  # the sentence stream was abandoned cleanly
     assert tts.synthesized == ["First sentence."]  # the second was never synthesized
@@ -251,27 +251,28 @@ async def test_hush_silences_the_current_reply() -> None:
     await asyncio.wait_for(task, 1)
 
 
-async def test_hush_during_thinking_cancels_the_pending_reply() -> None:
-    gate = asyncio.Event()  # never set: the turn stays parked pre-sentence
-    convo = FakeConvo(first_turn_gate=gate)
-    pipeline, stt, tts, _, sink = build(convo=convo)
-    task = asyncio.create_task(pipeline.run())
-
-    stt.push(chunk("hello there", is_final=True, speech_final=True))
-    await wait_for(lambda: sink.states[-1:] == [THINKING])
-    await pipeline.hush()
-
-    assert sink.states == [THINKING, LISTENING]
-    assert tts.synthesized == []
-    await pipeline.close()
-    await asyncio.wait_for(task, 1)
-
-
-async def test_hush_while_listening_is_a_no_op() -> None:
+async def test_hushed_turns_run_silently_and_unhush_restores_speech() -> None:
     pipeline, stt, tts, convo, sink = build()
     task = asyncio.create_task(pipeline.run())
-    await pipeline.hush()
-    assert sink.states == []  # nothing in flight, no state churn
+
+    pipeline.set_hushed(True)  # while idle: no task, no state churn
+    assert sink.states == []
+    stt.push(chunk("hello there", is_final=True, speech_final=True))
+    await wait_for(lambda: sink.states[-1:] == [LISTENING])
+
+    # The whole turn ran without a single synthesis — silence costs nothing.
+    assert sink.states == [THINKING, LISTENING]
+    assert tts.synthesized == []
+    assert sink.audio_chunks == []
+    assert sink.speech_ends == 0
+    assert convo.turns == ["hello there"]  # the session still got the turn
+
+    pipeline.set_hushed(False)
+    stt.push(chunk("and now speak", is_final=True, speech_final=True))
+    await wait_for(lambda: sink.speech_ends == 1 and sink.states[-1] is LISTENING)
+    assert SPEAKING in sink.states
+    assert tts.synthesized == ["Sure thing."]
+
     await pipeline.close()
     await asyncio.wait_for(task, 1)
 

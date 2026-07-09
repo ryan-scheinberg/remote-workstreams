@@ -51,11 +51,12 @@ class Mute(BaseModel):
 
 
 class Hush(BaseModel):
-    """Silence the current reply: the pipeline aborts the in-flight turn, so
-    sentences not yet synthesized never reach TTS. The session keeps writing —
-    the full reply still lands in chat from the transcript."""
+    """Speaker mute, the counterpart of Mute's mic mute: while on, replies land
+    in chat but are never synthesized — silence costs nothing. Flipping it on
+    mid-reply stops the audio immediately."""
 
     type: Literal["hush"] = "hush"
+    muted: bool
 
 
 class NewWorkstream(BaseModel):

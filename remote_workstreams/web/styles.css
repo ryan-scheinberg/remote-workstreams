@@ -593,20 +593,8 @@ button {
 }
 #btn-mute[aria-pressed="true"] .mute-slash { display: block; }
 
-/* Hush fills the resting row where the input would be: one tap, silence. */
+/* Hush is the speaker mute — mute's twin, amber instead of red. */
 #btn-hush {
-  flex: 1;
-  padding: 15px 0;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  color: var(--dim);
-}
-#btn-hush:active { background: var(--elev); color: var(--text); }
-#btn-hush[hidden] { display: none; }
-
-#btn-keyboard {
   width: 52px;
   height: 52px;
   flex: none;
@@ -617,16 +605,34 @@ button {
   background: var(--elev);
   color: var(--text);
 }
-#btn-keyboard svg { width: 22px; height: 22px; }
-#btn-keyboard[aria-pressed="true"] {
-  border-color: color-mix(in srgb, var(--teal) 45%, transparent);
-  color: var(--teal);
+#btn-hush svg { width: 22px; height: 22px; }
+#btn-hush .hush-slash { display: none; }
+#btn-hush[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--amber) 55%, transparent);
+  background: color-mix(in srgb, var(--amber) 12%, var(--elev));
+  color: var(--amber);
 }
+#btn-hush[aria-pressed="true"] .hush-slash { display: block; }
+
+/* The keyboard pill stands in for the input at rest; tapping swaps them. */
+#btn-keyboard {
+  flex: 1;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--faint);
+}
+#btn-keyboard:active { background: var(--elev); color: var(--text); }
+#btn-keyboard svg { width: 22px; height: 22px; }
+#btn-keyboard[hidden] { display: none; }
 
 #composer-input[hidden] { display: none; }
 
 #composer-input {
   flex: 1;
+  width: 0; /* WebKit: the size-attr minimum ignores min-width:0 in flex rows */
   min-width: 0;
   padding: 12px 16px;
   font: 16px var(--mono); /* 16px stops iOS focus zoom */

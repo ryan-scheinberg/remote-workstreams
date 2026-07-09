@@ -121,7 +121,7 @@ async def _handle(runtime: ConvoRuntime, conn: WSConnection, text: str) -> None:
             runtime.pipeline.set_muted(msg.muted)
     elif isinstance(msg, protocol.Hush):
         if runtime.pipeline is not None:
-            await runtime.pipeline.hush()
+            runtime.pipeline.set_hushed(msg.muted)
     elif isinstance(msg, protocol.NewWorkstream):
         runtime.new_workstream()
     elif isinstance(msg, protocol.SendToWorkstream):

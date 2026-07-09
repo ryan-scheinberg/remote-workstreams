@@ -11,9 +11,9 @@ Turn/interruption policy:
   Client-side echoCancellation keeps the assistant's own voice out of the mic.
 - Barge-in silences TTS and abandons the sentence stream, but the session keeps
   writing — the full reply still lands in chat from the transcript.
-- hush() is a barge-in without the speech: the phone's Hush button aborts the
-  in-flight turn (nothing further synthesized — that's the Cartesia $ saved)
-  and returns to LISTENING.
+- Hush is the speaker mute (set_hushed): while on, turns run silently — no
+  sentence is ever synthesized (that's the Cartesia $ saved) and replies reach
+  the user as chat only. Hushing mid-reply aborts the audio immediately.
 - User speech that endpoints while a turn is still THINKING supersedes it: the
   in-flight turn is cancelled and a fresh turn runs with the new text.
 - Endpoints are SOFT: Deepgram's VAD reads quiet trailing speech as silence and
@@ -116,6 +116,7 @@ class AudioPipeline:
         self.convo = convo
         self.sink = sink
         self.muted = False
+        self.hushed = False
         self._echo = EchoGuard()
         self._sm = StateMachine()
         self._mic: asyncio.Queue[bytes | None] = asyncio.Queue()
@@ -124,6 +125,7 @@ class AudioPipeline:
         self._grace_task: asyncio.Task[None] | None = None  # endpoint held, not yet committed
         self._merged = 0  # premature endpoints folded into the pending turn
         self._mute_flush_task: asyncio.Task[None] | None = None
+        self._hush_silence_task: asyncio.Task[None] | None = None
         self._closed = False
 
     @property
@@ -153,13 +155,17 @@ class AudioPipeline:
         timings = TurnTimings(kind="text", transcript_ts=time.time())
         await self._start_turn(lambda: self.convo.turn(text), timings)
 
-    async def hush(self) -> None:
-        """The phone's Hush button: silence the current reply. Aborting the turn
-        cancels the in-flight TTS stream and never synthesizes the remaining
-        sentences; the session keeps writing, so the full reply still lands in
-        chat. A barge-in without the speech, ending in LISTENING."""
-        if self._sm.state in (PipelineState.THINKING, PipelineState.SPEAKING):
-            await self._abort_turn()
+    def set_hushed(self, hushed: bool) -> None:
+        """The phone's speaker mute: while on, turns run silently — sentences
+        are never synthesized (silence costs nothing) and replies reach the
+        user as chat only. Hushing mid-reply aborts the audio immediately."""
+        self.hushed = hushed
+        if hushed and not self._closed and self._sm.state is PipelineState.SPEAKING:
+            self._hush_silence_task = asyncio.create_task(self._silence())
+
+    async def _silence(self) -> None:
+        await self._abort_turn()
+        if self._sm.state is not PipelineState.LISTENING:
             await self._set_state(PipelineState.LISTENING)
 
     def set_muted(self, muted: bool) -> None:
@@ -271,7 +277,7 @@ class AudioPipeline:
                 if timings.first_sentence_ts is None:
                     timings.first_sentence_ts = time.time()
                 sentence = sentence.strip()
-                if not sentence:
+                if not sentence or self.hushed:  # hushed: the reply is chat-only
                     continue
                 self._echo.note_sentence(sentence)
                 tts_stream = self.tts.synthesize(sentence)
