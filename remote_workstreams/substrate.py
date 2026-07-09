@@ -111,10 +111,17 @@ class Tmux:
 class Substrate:
     """Claude Code / Codex sessions as tmux windows: spawn, inject, check, kill."""
 
-    def __init__(self, tmux: Tmux, home: Path, tmux_session: str = "voice") -> None:
+    def __init__(
+        self,
+        tmux: Tmux,
+        home: Path,
+        tmux_session: str = "voice",
+        codex_command: str = "codex",
+    ) -> None:
         self._tmux = tmux
         self._home = home
         self._session = tmux_session
+        self._codex_command = codex_command
 
     @property
     def transcript_dir(self) -> Path:
@@ -173,7 +180,7 @@ class Substrate:
         await self._tmux.new_window(self._session, spec.name, self._home)
         window = f"{self._session}:{spec.name}"
         argv = [
-            "codex",
+            self._codex_command,
             "--model",
             spec.model,
             "--config",

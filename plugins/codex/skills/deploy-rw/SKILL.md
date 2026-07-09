@@ -54,13 +54,15 @@ path printed by `check.sh`.
 ## Step 2 — Engines
 
 `check.sh` reports which agent CLIs exist (`claude=` / `codex=`) and whether Codex's
-role-skill symlinks are in place (`codex_role_skills=`). At least one CLI must be
+role-skill symlinks are in place (`codex_role_skills=`). It prefers the ChatGPT app's
+bundled CLI when present, avoiding an older Homebrew `codex`; set
+`REMOTE_WORKSTREAMS_CODEX_COMMAND` to override that choice. At least one CLI must be
 installed and logged in. At runtime the model name carries the engine; three store
 settings shape what this box offers:
 
 - `engines` — which engines the phone's picker shows (`claude`, `codex`, or both)
 - `planner_model` / `injector_model` — who runs `+ Workstream` and `Send latest`
-  (default `opus` on Claude Code; `terra` is the Codex equivalent)
+  (default `opus` on Claude Code; `gpt-5.6-terra` is the Codex equivalent)
 
 Claude Code needs no wiring beyond login — the service hands its sessions the plugin
 directory at spawn. Wiring Codex is three symlinks (it discovers skills globally):
@@ -86,11 +88,11 @@ Apply by what's installed:
 - **Both CLIs:** ask the user whether to wire the second engine too, so both are
   pickable from the phone. Yes → the symlinks above and `engines` = `claude codex`;
   no → `engines` = the CLI you are running in. If you are running inside Codex, also
-  set `planner_model` and `injector_model` to `terra` — the engine that installs
+  set `planner_model` and `injector_model` to `gpt-5.6-terra` — the engine that installs
   drives the planning; the other stays pickable for conversation and workstreams.
 - **Claude Code only:** set `engines` = `claude`. Defaults cover the rest.
-- **Codex only:** the symlinks above, then `engines` = `codex`, `planner_model` and
-  `injector_model` = `terra`, and `convo_model` and `workstream_model` = `sol` so the
+- **Codex only:** the symlinks above, then `engines` = `codex`, `planner_model`,
+  `injector_model`, `convo_model`, and `workstream_model` = `gpt-5.6-terra` so the
   first boot doesn't try to spawn a missing `claude` binary.
 
 All of it is an easy flip later — re-run this step after installing the other CLI.

@@ -14,7 +14,7 @@ CLIENT_MESSAGES = [
     protocol.Compact(),
     protocol.CompactWorkstream(workstream="ws-auth"),
     protocol.SetModel(target="convo", model="sonnet"),
-    protocol.SetModel(target="convo", model="sol"),  # codex placeholder rides the same message
+    protocol.SetModel(target="convo", model="gpt-5.6-sol"),
     protocol.SetModel(target="workstream", model="opus"),
     protocol.ClearConvo(),
     protocol.Approval(approval_id="a1", approved=True),
@@ -41,7 +41,7 @@ SERVER_MESSAGES = [
                 name="ws-docs",
                 title="Write the docs",
                 status="running",
-                model="luna",
+                model="gpt-5.6-luna",
                 engine="codex",
             ),
         ],

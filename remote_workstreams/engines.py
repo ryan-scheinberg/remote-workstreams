@@ -2,9 +2,8 @@
 on which. The model name is the single source of truth: an engine is derived
 from its model, everywhere.
 
-The Codex 5.6 names are placeholders until the real identifiers are announced.
-Swap them here and in the picker buttons in web/index.html; everything else
-follows.
+Codex model IDs are passed to the CLI as-is. The picker has the same values and
+shorter human labels.
 """
 
 from __future__ import annotations
@@ -14,7 +13,7 @@ from pathlib import Path
 from remote_workstreams import rollout, transcript
 
 CLAUDE_MODELS = ("sonnet", "opus", "fable")
-CODEX_MODELS = ("luna", "terra", "sol")  # Codex 5.6 placeholders, small→large like the row above
+CODEX_MODELS = ("gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol")
 MODELS = CLAUDE_MODELS + CODEX_MODELS
 
 

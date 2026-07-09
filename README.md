@@ -69,6 +69,10 @@ across service restarts — a dead Codex conversation window starts fresh. Codex
 support is new plumbing, built against the documented CLI and real session files —
 treat it as beta until it has miles on it.
 
+The launchd installer prefers the Codex executable bundled with the ChatGPT Mac app
+when it is present. Set `REMOTE_WORKSTREAMS_CODEX_COMMAND` to an executable path
+before reinstalling the service to use a different Codex CLI.
+
 ## Topology
 
 ```

@@ -89,10 +89,10 @@ async def test_stored_convo_model_shapes_spawns(rig):
 
 async def test_codex_pick_spawns_a_codex_convo(rig):
     store, substrate = rig
-    store.set_setting("convo_model", "sol")
+    store.set_setting("convo_model", "gpt-5.6-sol")
     session = await ensure_convo(store, substrate, PLUGIN_DIR)
     spec = session.spec
-    assert (spec.engine, spec.model, spec.effort) == ("codex", "sol", "low")
+    assert (spec.engine, spec.model, spec.effort) == ("codex", "gpt-5.6-sol", "low")
     assert spec.initial_prompt == "$role-convo"  # codex skill invocation, not a slash command
     stored = store.get_convo_session()
     assert (stored.cc_session_id, stored.engine) == (session.session_id, "codex")
@@ -100,7 +100,7 @@ async def test_codex_pick_spawns_a_codex_convo(rig):
 
 async def test_alive_codex_window_is_reused_with_its_rollout(rig):
     store, substrate = rig
-    store.set_setting("convo_model", "sol")
+    store.set_setting("convo_model", "gpt-5.6-sol")
     store.set_convo_session("codex-stored", "codex")
     substrate.alive_windows.add("voice:convo")
     session = await ensure_convo(store, substrate, PLUGIN_DIR)
@@ -112,7 +112,7 @@ async def test_alive_codex_window_is_reused_with_its_rollout(rig):
 
 async def test_dead_codex_window_starts_fresh_not_resumed(rig):
     store, substrate = rig
-    store.set_setting("convo_model", "sol")
+    store.set_setting("convo_model", "gpt-5.6-sol")
     store.set_convo_session("codex-stored", "codex")  # no window alive
     session = await ensure_convo(store, substrate, PLUGIN_DIR)
     (spawned,) = substrate.spawned

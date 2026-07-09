@@ -109,7 +109,7 @@ async def main() -> int:
 
     config = Config.load()
     store = Store(config.db_path)
-    substrate = Substrate(Tmux(), home=Path.home())
+    substrate = Substrate(Tmux(), home=Path.home(), codex_command=config.codex_command)
     session = await ensure_convo(store, substrate, PLUGIN_DIR)
     bridge = ConvoBridge(substrate, session)
 

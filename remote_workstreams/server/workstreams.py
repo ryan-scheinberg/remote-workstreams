@@ -27,7 +27,7 @@ logger = logging.getLogger("remote_workstreams.server.workstreams")
 # Session roster: ephemeral passthroughs think hard, workstreams execute.
 # Models are only defaults — store settings win (the menu sets workstream_model;
 # deploy sets planner_model/injector_model to the install engine's thinker, e.g.
-# terra on a Codex-driven install). Effort is fixed regardless of model.
+# gpt-5.6-terra on a Codex-driven install). Effort is fixed regardless of model.
 PLANNER_MODEL, PLANNER_EFFORT = "opus", "high"
 INJECTOR_MODEL, INJECTOR_EFFORT = "opus", "high"
 WORKSTREAM_MODEL, WORKSTREAM_EFFORT = "fable", "xhigh"

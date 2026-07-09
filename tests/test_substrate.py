@@ -138,7 +138,7 @@ CODEX_ROLLOUT = f"rollout-2026-07-08T10-00-00-{CODEX_UUID}.jsonl"
 
 def codex_spec(**overrides) -> SessionSpec:
     fields = dict(
-        name="convo", model="sol", effort="low", display_name="convo",
+        name="convo", model="gpt-5.6-sol", effort="low", display_name="convo",
         engine="codex", initial_prompt="$role-convo",
     )
     fields.update(overrides)
@@ -148,7 +148,11 @@ def codex_spec(**overrides) -> SessionSpec:
 async def test_spawn_codex_discovers_the_rollout_file(tmp_path, monkeypatch):
     monkeypatch.setattr(substrate_module, "_CODEX_POLL_S", 0.01)
     fake = FakeTmux()
-    sub = Substrate(fake, home=tmp_path)
+    sub = Substrate(
+        fake,
+        home=tmp_path,
+        codex_command="/Applications/ChatGPT.app/Contents/Resources/codex",
+    )
     day = tmp_path / ".codex/sessions/2026/07/08"
     day.mkdir(parents=True)
     (day / "rollout-2026-07-08T09-00-00-00000000-0000-0000-0000-000000000000.jsonl").touch()
@@ -163,7 +167,8 @@ async def test_spawn_codex_discovers_the_rollout_file(tmp_path, monkeypatch):
     assert session.transcript == rollout
     assert session.window == "voice:convo"
     expected = (
-        "command codex --model sol --config 'model_reasoning_effort=\"low\"'"
+        "command /Applications/ChatGPT.app/Contents/Resources/codex --model gpt-5.6-sol"
+        " --config 'model_reasoning_effort=\"low\"'"
         " --sandbox workspace-write --ask-for-approval never"
         " --config sandbox_workspace_write.network_access=true '$role-convo'"
     )

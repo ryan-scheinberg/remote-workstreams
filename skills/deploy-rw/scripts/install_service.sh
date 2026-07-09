@@ -10,6 +10,14 @@ LABEL="com.remote-workstreams.server"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 TEMPLATE="$REPO/deploy/$LABEL.plist.template"
 PORT="${REMOTE_WORKSTREAMS_PORT:-8400}"
+CHATGPT_CODEX="/Applications/ChatGPT.app/Contents/Resources/codex"
+if [ -n "${REMOTE_WORKSTREAMS_CODEX_COMMAND:-}" ]; then
+  CODEX_COMMAND="$REMOTE_WORKSTREAMS_CODEX_COMMAND"
+elif [ -x "$CHATGPT_CODEX" ]; then
+  CODEX_COMMAND="$CHATGPT_CODEX"
+else
+  CODEX_COMMAND="codex"
+fi
 
 command -v uv >/dev/null 2>&1 || { echo "error=uv-missing hint=https://docs.astral.sh/uv/"; exit 1; }
 UV="$(command -v uv)"
@@ -21,8 +29,9 @@ command -v tmux >/dev/null 2>&1 || { echo "error=tmux-missing hint=brew install 
 echo "deps=synced"
 
 mkdir -p "$HOME/Library/LaunchAgents" "$HOME/.remote-workstreams/logs"  # launchd won't create log dirs
-sed -e "s|__UV__|$UV|g" -e "s|__REPO__|$REPO|g" -e "s|__HOME__|$HOME|g" -e "s|__PORT__|$PORT|g" "$TEMPLATE" > "$PLIST"
+sed -e "s|__UV__|$UV|g" -e "s|__REPO__|$REPO|g" -e "s|__HOME__|$HOME|g" -e "s|__PORT__|$PORT|g" -e "s|__CODEX_COMMAND__|$CODEX_COMMAND|g" "$TEMPLATE" > "$PLIST"
 echo "plist=$PLIST"
+echo "codex_command=$CODEX_COMMAND"
 
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" "$PLIST"

@@ -273,13 +273,13 @@ def test_set_model_engine_switch_clears_the_convo(client, fakes):
     client.app_state.runtime.workstreams = manager
     with client.websocket_connect("/ws") as ws:
         hello(ws)
-        ws.send_text(SetModel(target="convo", model="sol").model_dump_json())
+        ws.send_text(SetModel(target="convo", model="gpt-5.6-sol").model_dump_json())
         # A fresh session on the new engine, announced like the Clear button.
         assert json.loads(ws.receive_text()) == {"type": "convo_cleared"}
         assert fakes.convo_resets == 1
         assert manager.convo_transcript == fakes.fresh_transcript
     assert fakes.bridge.slashes == []  # /model can't cross engines
-    assert ("set_model", "convo", "sol") in manager.calls
+    assert ("set_model", "convo", "gpt-5.6-sol") in manager.calls
 
 
 def test_set_model_same_pick_changes_nothing_live(client, fakes):

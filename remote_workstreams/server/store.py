@@ -116,6 +116,14 @@ class Store:
                 self._conn.execute(
                     "ALTER TABLE convo ADD COLUMN engine TEXT NOT NULL DEFAULT 'claude'"
                 )
+            for old, new in (
+                ("luna", "gpt-5.6-luna"),
+                ("terra", "gpt-5.6-terra"),
+                ("sol", "gpt-5.6-sol"),
+            ):
+                self._conn.execute(
+                    "UPDATE settings SET value = ? WHERE value = ?", (new, old)
+                )
             self._conn.commit()
 
     def close(self) -> None:

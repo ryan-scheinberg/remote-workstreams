@@ -23,6 +23,7 @@ class Config:
     host: str = "127.0.0.1"
     port: int = 8400
     data_dir: Path = field(default_factory=_default_data_dir)
+    codex_command: str = "codex"
 
     @property
     def db_path(self) -> Path:
@@ -34,4 +35,5 @@ class Config:
             host=_env("HOST", cls.host),
             port=int(_env("PORT", str(cls.port))),
             data_dir=Path(_env("DATA_DIR", str(_default_data_dir()))).expanduser(),
+            codex_command=_env("CODEX_COMMAND", cls.codex_command),
         )

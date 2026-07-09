@@ -32,7 +32,8 @@ def test_workstreams_crud(tmp_path):
         "ws-auth", "cc-1", "voice:ws-auth", "Wire auth", "/plans/plan-1.md", "fable", "claude"
     )
     store.add_workstream(
-        "ws-docs", "cc-2", "voice:ws-docs", "Write docs", "/plans/plan-2.md", "luna", "codex"
+        "ws-docs", "cc-2", "voice:ws-docs", "Write docs", "/plans/plan-2.md",
+        "gpt-5.6-luna", "codex"
     )
     rows = store.list_workstreams()
     assert [r.name for r in rows] == ["ws-auth", "ws-docs"]
@@ -41,7 +42,7 @@ def test_workstreams_crud(tmp_path):
     assert rows[0].title == "Wire auth"
     assert rows[0].plan_path == "/plans/plan-1.md"
     assert rows[0].status == "running"
-    assert [r.model for r in rows] == ["fable", "luna"]
+    assert [r.model for r in rows] == ["fable", "gpt-5.6-luna"]
     assert [r.engine for r in rows] == ["claude", "codex"]
 
     store.set_workstream_status("ws-auth", "gone")
@@ -64,6 +65,20 @@ def test_settings_roundtrip(tmp_path):
     assert store.get_setting("convo_model") == "sonnet"
     store.set_setting("convo_model", "opus")  # replace, never a second row
     assert store.get_setting("convo_model") == "opus"
+
+
+def test_placeholder_codex_settings_upgrade_to_canonical_ids(tmp_path):
+    path = tmp_path / "data" / "test.sqlite3"
+    store = Store(path)
+    store.set_setting("convo_model", "sol")
+    store.set_setting("workstream_model", "luna")
+    store.set_setting("planner_model", "terra")
+    store.close()
+
+    upgraded = Store(path)
+    assert upgraded.get_setting("convo_model") == "gpt-5.6-sol"
+    assert upgraded.get_setting("workstream_model") == "gpt-5.6-luna"
+    assert upgraded.get_setting("planner_model") == "gpt-5.6-terra"
 
 
 def test_pre_model_workstreams_table_gains_the_column_as_fable(tmp_path):

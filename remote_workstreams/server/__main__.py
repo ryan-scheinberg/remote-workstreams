@@ -76,7 +76,7 @@ async def _serve() -> None:
     settings_path = _write_workstream_settings(config, token)
     store = Store(config.db_path)
     tmux = Tmux()
-    substrate = Substrate(tmux, Path.home())
+    substrate = Substrate(tmux, Path.home(), codex_command=config.codex_command)
     await tmux.ensure_session("voice")
     convo = await ensure_convo(store, substrate, PLUGIN_DIR)
     bridge = ConvoBridge(substrate, convo)

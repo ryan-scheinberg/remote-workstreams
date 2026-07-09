@@ -36,17 +36,16 @@
 
   <div id="menu" hidden>
     <!-- Claude row then Codex row per target, both small→large so the tiers
-         line up by column. Codex 5.6 names are placeholders (see
-         remote_workstreams/engines.py) — swap both when the real ones drop. -->
+         line up by column. The IDs live in remote_workstreams/engines.py. -->
     <div class="menu-row">
       <span class="menu-name">convo</span>
       <div class="menu-models" data-target="convo">
         <button type="button" data-model="sonnet">sonnet</button>
         <button type="button" data-model="opus">opus</button>
         <button type="button" data-model="fable">fable</button>
-        <button type="button" class="codex" data-model="luna">luna</button>
-        <button type="button" class="codex" data-model="terra">terra</button>
-        <button type="button" class="codex" data-model="sol">sol</button>
+        <button type="button" class="codex" data-model="gpt-5.6-luna">luna</button>
+        <button type="button" class="codex" data-model="gpt-5.6-terra">terra</button>
+        <button type="button" class="codex" data-model="gpt-5.6-sol">sol</button>
       </div>
     </div>
     <div class="menu-row">
@@ -55,9 +54,9 @@
         <button type="button" data-model="sonnet">sonnet</button>
         <button type="button" data-model="opus">opus</button>
         <button type="button" data-model="fable">fable</button>
-        <button type="button" class="codex" data-model="luna">luna</button>
-        <button type="button" class="codex" data-model="terra">terra</button>
-        <button type="button" class="codex" data-model="sol">sol</button>
+        <button type="button" class="codex" data-model="gpt-5.6-luna">luna</button>
+        <button type="button" class="codex" data-model="gpt-5.6-terra">terra</button>
+        <button type="button" class="codex" data-model="gpt-5.6-sol">sol</button>
       </div>
     </div>
   </div>
