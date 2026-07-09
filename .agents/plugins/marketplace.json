@@ -1,0 +1,11 @@
+{
+  "name": "remote-workstreams",
+  "plugins": [
+    {
+      "name": "remote-workstreams",
+      "source": { "source": "local", "path": "./plugins/codex" },
+      "description": "Voice interface for coding agents — deploy the remote-workstreams service on this Mac.",
+      "category": "Developer Tools"
+    }
+  ]
+}

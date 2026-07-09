@@ -1,0 +1,13 @@
+{
+  "name": "remote-workstreams",
+  "displayName": "remote-workstreams",
+  "description": "Voice interface for coding agents on your own Mac + tailnet — installs the guided deploy skill.",
+  "shortDescription": "Deploy remote-workstreams",
+  "version": "0.1.0",
+  "skills": ["./skills/deploy"],
+  "author": "Ryan Scheinberg",
+  "repository": "https://github.com/ryan-scheinberg/remote-workstreams",
+  "license": "GPL-3.0-only",
+  "category": "Developer Tools",
+  "keywords": ["voice", "claude-code", "codex", "tailscale", "speech", "assistant", "self-hosted"]
+}

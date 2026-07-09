@@ -91,6 +91,9 @@ iPhone (Safari PWA) ──WebSocket/HTTPS over Tailscale──> Mac
 
 ## Install
 
+The install is one guided skill, drivable from either CLI — run it in whichever you
+have, and it wires both engines if both are present.
+
 From Claude Code:
 
 ```
@@ -99,19 +102,30 @@ From Claude Code:
 /remote-workstreams:deploy
 ```
 
-`/remote-workstreams:deploy` is a guided deploy run by Claude on your Mac. It confirms every
-system-touching action with you before running it, and it is safe to re-run — it doubles
-as repair. What it does:
+From Codex:
+
+```
+codex plugin marketplace add ryan-scheinberg/remote-workstreams
+codex plugin add remote-workstreams@remote-workstreams
+```
+
+then start `codex` and ask for `$deploy`.
+
+The deploy is run by the agent on your Mac. It confirms every system-touching action
+with you before running it, and it is safe to re-run — it doubles as repair. What it
+does:
 
 1. Preflight: macOS, uv, tmux, and a durable git clone of this repo (defaults to `~/remote-workstreams`)
-2. Tailscale: detects it, guides install and login if missing, captures your MagicDNS name
-3. Stores your two provider keys (Deepgram, Cartesia) in the macOS Keychain
-4. Takes your 4-digit pairing PIN; only its scrypt hash is stored
-5. Installs and starts the launchd service, verifies `/healthz`
-6. Maps HTTPS on your MagicDNS name to the local service via `tailscale serve`
-7. Prints a pairing QR code — open it on the iPhone, Add to Home Screen, enter the
+2. Engines: detects Claude Code and Codex; with your OK, wires whichever second
+   engine is present so both are pickable from the phone
+3. Tailscale: detects it, guides install and login if missing, captures your MagicDNS name
+4. Stores your two provider keys (Deepgram, Cartesia) in the macOS Keychain
+5. Takes your 4-digit pairing PIN; only its scrypt hash is stored
+6. Installs and starts the launchd service, verifies `/healthz`
+7. Maps HTTPS on your MagicDNS name to the local service via `tailscale serve`
+8. Prints a pairing QR code — open it on the iPhone, Add to Home Screen, enter the
    PIN, confirm Face ID
-8. Runs an audio round-trip test (synthesized speech in → transcript → reply audio out)
+9. Runs an audio round-trip test (synthesized speech in → transcript → reply audio out)
    and reports the result
 
 ## Security model
@@ -161,6 +175,7 @@ uvx ruff check .   # lint
 | `hooks/` | `ask_phone.py` — the phone-approval relay hook client |
 | `skills/` | `role-convo`, `role-stint-plan`, `role-inject`, and the deploy skill |
 | `plugins/claude-code/` | Claude Code plugin wrapper (`/remote-workstreams:deploy` + skills) |
+| `plugins/codex/` | Codex plugin wrapper (`$deploy`; carries a copy of the deploy skill — pinned by a test) |
 | `tests/` | pytest, mirroring module names |
 
 ## Tailscale Funnel
