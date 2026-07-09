@@ -1,5 +1,5 @@
 ---
-name: deploy
+name: deploy-rw
 description: Deploy remote-workstreams on this Mac — tmux + Tailscale checks, engine wiring (Claude Code / Codex), Deepgram/Cartesia keys into the macOS Keychain, pairing PIN, launchd install, tailscale serve, pairing QR, round-trip test. Use when the user wants to install, deploy, or repair a remote-workstreams service.
 ---
 
@@ -53,37 +53,47 @@ path printed by `check.sh`.
 
 ## Step 2 — Engines
 
-`check.sh` reports which agent CLIs exist (`claude=` / `codex=`). At least one must be
-installed and logged in. Claude Code is the primary engine; Codex is an optional second
-engine for the conversation and workstreams. Claude Code never needs wiring beyond
-being logged in — the service hands its sessions the plugin directory explicitly at
-spawn. Codex discovers skills globally, so its wiring is one symlink.
+`check.sh` reports which agent CLIs exist (`claude=` / `codex=`) and whether Codex's
+role-skill symlinks are in place (`codex_role_skills=`). At least one CLI must be
+installed and logged in. At runtime the model name carries the engine; three store
+settings shape what this box offers:
 
-- **Both present:** ask the user whether to wire the Codex engine too, so both are
-  pickable from the phone. If yes:
+- `engines` — which engines the phone's picker shows (`claude`, `codex`, or both)
+- `planner_model` / `injector_model` — who runs `+ Workstream` and `Send latest`
+  (default `opus` on Claude Code; `terra` is the Codex equivalent)
 
-  ```
-  mkdir -p ~/.codex/skills && ln -sfn "$REPO/skills/role-convo" ~/.codex/skills/role-convo
-  ```
+Claude Code needs no wiring beyond login — the service hands its sessions the plugin
+directory at spawn. Wiring Codex is three symlinks (it discovers skills globally):
 
-- **Claude Code only:** nothing to do. Codex can be added later by re-running this
-  deploy after installing it.
-- **Codex only:** create the symlink above, then point the stored model defaults at
-  Codex models so the first boot doesn't try to spawn a missing `claude` binary
-  (current model names live in `remote_workstreams/engines.py`):
+```
+mkdir -p ~/.codex/skills
+for s in role-convo role-stint-plan role-inject; do ln -sfn "$REPO/skills/$s" ~/.codex/skills/$s; done
+```
 
-  ```
-  (cd "$REPO" && uv run python -c "
-  from remote_workstreams.config import Config
-  from remote_workstreams.server.store import Store
-  store = Store(Config.load().db_path)
-  store.set_setting('convo_model', 'sol')
-  store.set_setting('workstream_model', 'sol')")
-  ```
+Settings are written with this one-liner shape (add `set_setting` lines as needed;
+current model names live in `remote_workstreams/engines.py`):
 
-  Be direct about the limitation: without Claude Code the spoken conversation works,
-  but `+ Workstream` and `Send latest` do not — the planner and injector sessions are
-  pinned to Claude Code.
+```
+(cd "$REPO" && uv run python -c "
+from remote_workstreams.config import Config
+from remote_workstreams.server.store import Store
+store = Store(Config.load().db_path)
+store.set_setting('engines', 'claude codex')")
+```
+
+Apply by what's installed:
+
+- **Both CLIs:** ask the user whether to wire the second engine too, so both are
+  pickable from the phone. Yes → the symlinks above and `engines` = `claude codex`;
+  no → `engines` = the CLI you are running in. If you are running inside Codex, also
+  set `planner_model` and `injector_model` to `terra` — the engine that installs
+  drives the planning; the other stays pickable for conversation and workstreams.
+- **Claude Code only:** set `engines` = `claude`. Defaults cover the rest.
+- **Codex only:** the symlinks above, then `engines` = `codex`, `planner_model` and
+  `injector_model` = `terra`, and `convo_model` and `workstream_model` = `sol` so the
+  first boot doesn't try to spawn a missing `claude` binary.
+
+All of it is an easy flip later — re-run this step after installing the other CLI.
 
 ## Step 3 — Tailscale
 
@@ -205,4 +215,4 @@ URL, pairing status, round-trip result, and the rollback notes below.
   `scripts/install_service.sh "$REPO"`
 - Stop serving: `"$TS" serve reset` (or the equivalent shown by `"$TS" serve --help`)
 - Remove secrets: `security delete-generic-password -s remote-workstreams -a NAME` per entry
-- Unwire Codex: `rm -f ~/.codex/skills/role-convo`
+- Unwire Codex: `rm -f ~/.codex/skills/role-convo ~/.codex/skills/role-stint-plan ~/.codex/skills/role-inject`

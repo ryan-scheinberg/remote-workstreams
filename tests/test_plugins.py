@@ -9,8 +9,8 @@ re-copy when it fails. The Claude plugin keeps symlinks (Claude follows them).
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-SOURCE = REPO / "skills" / "deploy"
-CODEX_COPY = REPO / "plugins" / "codex" / "skills" / "deploy"
+SOURCE = REPO / "skills" / "deploy-rw"
+CODEX_COPY = REPO / "plugins" / "codex" / "skills" / "deploy-rw"
 
 
 def _files(root: Path) -> dict[str, bytes]:
@@ -23,8 +23,8 @@ def _files(root: Path) -> dict[str, bytes]:
 
 def test_codex_plugin_deploy_skill_matches_the_source():
     assert _files(CODEX_COPY) == _files(SOURCE), (
-        "plugins/codex/skills/deploy drifted from skills/deploy —"
-        " re-copy it (cp -R skills/deploy plugins/codex/skills/)"
+        "plugins/codex/skills/deploy-rw drifted from skills/deploy-rw —"
+        " re-copy it (cp -R skills/deploy-rw plugins/codex/skills/)"
     )
 
 

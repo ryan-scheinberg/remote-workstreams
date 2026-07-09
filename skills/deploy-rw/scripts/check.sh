@@ -39,11 +39,15 @@ else
 fi
 if command -v codex >/dev/null 2>&1; then
   echo "codex=$(command -v codex)"
-  if [ -L "$HOME/.codex/skills/role-convo" ]; then
-    echo "codex_role_convo=linked"
-  else
-    echo "codex_role_convo=missing"
-  fi
+  linked=0
+  for s in role-convo role-stint-plan role-inject; do
+    [ -L "$HOME/.codex/skills/$s" ] && linked=$((linked + 1))
+  done
+  case "$linked" in
+    3) echo "codex_role_skills=linked" ;;
+    0) echo "codex_role_skills=missing" ;;
+    *) echo "codex_role_skills=partial" ;;
+  esac
 else
   echo "codex=missing"
 fi
