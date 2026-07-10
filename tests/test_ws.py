@@ -1,3 +1,4 @@
+import asyncio
 import json
 import threading
 import time
@@ -24,6 +25,7 @@ from remote_workstreams.protocol import (
     TextInput,
 )
 from remote_workstreams.server.runtime import ProtocolSink
+from remote_workstreams.server import runtime as runtime_module
 from remote_workstreams.transcript import AssistantText, CompactEnd, ToolActivity, TurnEnd, UserText
 
 
@@ -189,6 +191,56 @@ def test_second_connection_takes_over(client, fakes):
                 ws1.receive_text()
             assert fakes.pipelines[0].closed
             run_turn(ws2, "still alive")  # the takeover connection is fully functional
+
+
+def test_pipeline_reconnects_after_a_provider_disconnect(client, fakes, monkeypatch):
+    class FailingOncePipeline:
+        def __init__(self, index):
+            self.index = index
+            self.muted = False
+            self.hushed = False
+            self.closed = False
+            self.done = threading.Event()
+
+        async def run(self):
+            if self.index == 0:
+                raise ConnectionError("provider dropped")
+            while not self.done.is_set():
+                await asyncio.sleep(0.01)
+
+        async def feed(self, pcm):
+            pass
+
+        async def text(self, text):
+            pass
+
+        def set_muted(self, muted):
+            self.muted = muted
+
+        def set_hushed(self, hushed):
+            self.hushed = hushed
+
+        async def close(self):
+            self.closed = True
+            self.done.set()
+
+    pipelines = []
+
+    def make_pipeline(*_args):
+        pipeline = FailingOncePipeline(len(pipelines))
+        pipelines.append(pipeline)
+        return pipeline
+
+    client.app_state.runtime.pipeline_factory = make_pipeline
+    monkeypatch.setattr(runtime_module, "_PIPELINE_RECONNECT_S", 0.01)
+    with client.websocket_connect("/ws") as ws:
+        hello(ws)
+        ws.send_text(Mute(muted=True).model_dump_json())
+        ws.send_text(Hush(muted=True).model_dump_json())
+        wait_for(lambda: len(pipelines) == 2)
+        assert pipelines[0].closed
+        assert pipelines[1].muted is True
+        assert pipelines[1].hushed is True
 
 
 class RecordingManager:

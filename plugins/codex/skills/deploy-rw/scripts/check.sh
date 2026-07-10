@@ -37,12 +37,7 @@ if command -v claude >/dev/null 2>&1; then
 else
   echo "claude=missing"
 fi
-CHATGPT_CODEX="/Applications/ChatGPT.app/Contents/Resources/codex"
-if [ -n "${REMOTE_WORKSTREAMS_CODEX_COMMAND:-}" ]; then
-  CODEX_COMMAND="$REMOTE_WORKSTREAMS_CODEX_COMMAND"
-elif [ -x "$CHATGPT_CODEX" ]; then
-  CODEX_COMMAND="$CHATGPT_CODEX"
-elif command -v codex >/dev/null 2>&1; then
+if command -v codex >/dev/null 2>&1; then
   CODEX_COMMAND="$(command -v codex)"
 else
   CODEX_COMMAND=""

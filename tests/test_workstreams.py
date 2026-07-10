@@ -103,7 +103,7 @@ async def test_new_workstream_plans_then_launches(rig):
     assert spec.settings_file == tmp_path / "workstream-settings.json"
     assert spec.initial_prompt == "/role-root"
     assert spec.display_name == "Wire the auth flow"
-    # the full plan text is pasted as the first message
+    # Claude names itself at launch; the full plan is the first pasted message.
     assert substrate.sent == [("voice:ws-wire-the-auth-flow", PLAN_TEXT)]
 
     (row,) = store.list_workstreams()
@@ -329,6 +329,10 @@ async def test_codex_pick_launches_a_codex_workstream(rig):
     assert (spec.engine, spec.model, spec.effort) == ("codex", "gpt-5.6-luna", "xhigh")
     assert spec.initial_prompt == "$role-root"  # codex skill invocation
     assert spec.settings_file is None  # the approval relay hook is claude-only
+    assert substrate.sent[-2:] == [
+        (session.window, "/rename Wire the auth flow"),
+        (session.window, PLAN_TEXT),
+    ]
 
     (row,) = store.list_workstreams()
     assert (row.model, row.engine) == ("gpt-5.6-luna", "codex")
@@ -466,3 +470,15 @@ async def test_end_workstream_kills_window_and_drops_card(rig):
 
     await manager.end_workstream("ws-wire-the-auth-flow")  # already gone
     assert isinstance(notify.messages[-1], protocol.Error)
+
+
+async def test_end_codex_workstream_archives_its_chat(rig):
+    manager, store, substrate, notify, tmp_path = rig
+    manager.set_model("workstream", "gpt-5.6-luna")
+    await launch(rig)
+    session = substrate.spawned[-1]
+
+    await manager.end_workstream("ws-wire-the-auth-flow")
+
+    assert substrate.archived == [session.session_id]
+    assert store.list_workstreams() == []

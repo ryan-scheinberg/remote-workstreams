@@ -29,6 +29,8 @@ from remote_workstreams.transcript import AssistantText, CompactEnd, Entry, Tool
 
 logger = logging.getLogger("remote_workstreams.server.runtime")
 
+_PIPELINE_RECONNECT_S = 1.0
+
 STTFactory = Callable[[], STTAdapter]
 TTSFactory = Callable[[], TTSAdapter]
 # Kills the convo session, spawns a fresh one, re-points the bridge; returns the
@@ -154,6 +156,8 @@ class ConvoRuntime:
         self._status_task: asyncio.Task | None = None
         self._button_tasks: set[asyncio.Task] = set()
         self._lock = asyncio.Lock()
+        self._muted = False
+        self._hushed = False
 
     def start(self) -> None:
         self._fanout_task = asyncio.create_task(self._fan_out())
@@ -182,11 +186,10 @@ class ConvoRuntime:
                     await conn.send_message(chat)
             self.conn = conn
             self.push.conn = conn
-            sink = ProtocolSink(conn)
-            self.pipeline = self.pipeline_factory(
-                self.stt_factory(), self.tts_factory(), self.bridge, sink
-            )
-            self._pipeline_task = asyncio.create_task(self._run_pipeline(self.pipeline))
+            self._muted = False
+            self._hushed = False
+            self.pipeline = self._new_pipeline(conn)
+            self._pipeline_task = asyncio.create_task(self._run_pipeline(conn))
             log(logger, "client_attached")
 
     async def detach(self, conn: ClientConnection) -> None:
@@ -217,6 +220,16 @@ class ConvoRuntime:
         )
         if self.pipeline is not None:
             await self.pipeline.text(directive)
+
+    def set_muted(self, muted: bool) -> None:
+        self._muted = muted
+        if self.pipeline is not None:
+            self.pipeline.set_muted(muted)
+
+    def set_hushed(self, hushed: bool) -> None:
+        self._hushed = hushed
+        if self.pipeline is not None:
+            self.pipeline.set_hushed(hushed)
 
     async def compact(self) -> None:
         await self.bridge.slash("/compact")
@@ -277,11 +290,31 @@ class ConvoRuntime:
         if conn is not None and error is not None:
             await conn.close_with_error(error)
 
-    @staticmethod
-    async def _run_pipeline(pipeline: Pipeline) -> None:
-        try:
-            await pipeline.run()
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("pipeline run failed")
+    def _new_pipeline(self, conn: ClientConnection) -> Pipeline:
+        pipeline = self.pipeline_factory(
+            self.stt_factory(), self.tts_factory(), self.bridge, ProtocolSink(conn)
+        )
+        pipeline.set_muted(self._muted)
+        pipeline.set_hushed(self._hushed)
+        return pipeline
+
+    async def _run_pipeline(self, conn: ClientConnection) -> None:
+        """A provider socket can disappear while the phone stays connected.
+
+        Recreate only the failed pipeline for this socket; the transcript bridge
+        and workstream state keep running, and the phone's mute state survives.
+        """
+        while self.conn is conn and self.pipeline is not None:
+            pipeline = self.pipeline
+            try:
+                await pipeline.run()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("pipeline run failed; reconnecting")
+            if self.conn is not conn or self.pipeline is not pipeline:
+                return
+            await pipeline.close()
+            await asyncio.sleep(_PIPELINE_RECONNECT_S)
+            if self.conn is conn and self.pipeline is pipeline:
+                self.pipeline = self._new_pipeline(conn)

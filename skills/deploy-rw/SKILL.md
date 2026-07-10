@@ -54,10 +54,10 @@ path printed by `check.sh`.
 ## Step 2 — Engines
 
 `check.sh` reports which agent CLIs exist (`claude=` / `codex=`) and whether Codex's
-role-skill symlinks are in place (`codex_role_skills=`). It prefers the ChatGPT app's
-bundled CLI when present, avoiding an older Homebrew `codex`; set
-`REMOTE_WORKSTREAMS_CODEX_COMMAND` to override that choice. At least one CLI must be
-installed and logged in. At runtime the model name carries the engine; three store
+role-skill symlinks are in place (`codex_role_skills=`). The service launches `codex`
+from launchd's Homebrew-aware PATH, so it follows the maintained CLI install without
+depending on the ChatGPT app bundle. At least one CLI must be installed and logged in.
+At runtime the model name carries the engine; three store
 settings shape what this box offers:
 
 - `engines` — which engines the phone's picker shows (`claude`, `codex`, or both)

@@ -231,6 +231,27 @@ class Substrate:
             await asyncio.sleep(1.0)
             await self._tmux.send_key(session.window, "Enter")
 
+    async def rename(self, session: CCSession, name: str) -> None:
+        """Give a Codex thread the same human name as its workstream."""
+        if session.spec.engine == "codex":
+            await self.slash(session, f"/rename {name}")
+
+    async def archive(self, session: CCSession) -> None:
+        """Archive a finished Codex thread from its ChatGPT/Codex history."""
+        if session.spec.engine != "codex":
+            return
+        proc = await asyncio.create_subprocess_exec(
+            self._codex_command,
+            "archive",
+            session.session_id,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _stdout, stderr = await proc.communicate()
+        if proc.returncode:
+            detail = stderr.decode().strip() or "codex archive failed"
+            raise RuntimeError(detail)
+
     async def alive(self, session: CCSession) -> bool:
         return await self._tmux.window_exists(session.window)
 

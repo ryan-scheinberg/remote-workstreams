@@ -57,7 +57,8 @@ Code; pick a Codex model and it's Codex CLI (model lists live in
 `remote_workstreams/engines.py`). A Claude-to-Claude conversation pick switches the
 live session in place; switching engines (or between Codex models) starts a fresh
 conversation, announced before you confirm. Running workstreams always keep the
-engine and model they launched with. The planner and injector sessions behind
+engine and model they launched with. Codex workstreams are renamed to their stint
+title in ChatGPT as they launch and archived when you tap End. The planner and injector sessions behind
 `+ Workstream` and `Send latest` run on whichever engine installed the service
 (store-configurable), so a single-engine box is fully functional either way.
 
@@ -69,9 +70,9 @@ across service restarts — a dead Codex conversation window starts fresh. Codex
 support is new plumbing, built against the documented CLI and real session files —
 treat it as beta until it has miles on it.
 
-The launchd installer prefers the Codex executable bundled with the ChatGPT Mac app
-when it is present. Set `REMOTE_WORKSTREAMS_CODEX_COMMAND` to an executable path
-before reinstalling the service to use a different Codex CLI.
+The launchd service runs `codex` from its Homebrew-aware PATH. Codex conversations
+also appear in the ChatGPT app's history, so a live workstream can be opened there
+without separate pairing.
 
 ## Topology
 

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from remote_workstreams import substrate as substrate_module
-from remote_workstreams.substrate import SessionSpec, Substrate, Tmux, slug
+from remote_workstreams.substrate import CCSession, SessionSpec, Substrate, Tmux, slug
 
 HOME = Path("/Users/alice")
 
@@ -234,6 +234,17 @@ async def test_slash_model_sends_a_sacrificial_enter():
         ("type_line", "voice:convo", "/model sonnet"),
         ("send_key", "voice:convo", "Enter"),
     ]
+
+
+async def test_rename_types_codex_slash_command():
+    fake = FakeTmux()
+    sub = Substrate(fake, home=HOME)
+    spec = codex_spec()
+    session = CCSession("codex-id", "voice:convo", HOME / "rollout.jsonl", spec)
+
+    await sub.rename(session, "Wire the auth flow")
+
+    assert fake.calls[-1] == ("type_line", "voice:convo", "/rename Wire the auth flow")
 
 
 async def test_alive_and_kill():

@@ -104,6 +104,7 @@ class FakeSubstrate:
         self.spawned: list[CCSession] = []
         self.sent: list[tuple[str, str]] = []
         self.killed: list[str] = []
+        self.archived: list[str] = []
         self.alive_windows: set[str] = set()
 
     def codex_transcript(self, session_id: str) -> Path:
@@ -137,6 +138,14 @@ class FakeSubstrate:
 
     async def slash(self, session: CCSession, command: str) -> None:
         self.sent.append((session.window, command))
+
+    async def rename(self, session: CCSession, name: str) -> None:
+        if session.spec.engine == "codex":
+            self.sent.append((session.window, f"/rename {name}"))
+
+    async def archive(self, session: CCSession) -> None:
+        if session.spec.engine == "codex":
+            self.archived.append(session.session_id)
 
     async def alive(self, session: CCSession) -> bool:
         return session.window in self.alive_windows

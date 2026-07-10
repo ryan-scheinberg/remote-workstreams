@@ -10,14 +10,7 @@ LABEL="com.remote-workstreams.server"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 TEMPLATE="$REPO/deploy/$LABEL.plist.template"
 PORT="${REMOTE_WORKSTREAMS_PORT:-8400}"
-CHATGPT_CODEX="/Applications/ChatGPT.app/Contents/Resources/codex"
-if [ -n "${REMOTE_WORKSTREAMS_CODEX_COMMAND:-}" ]; then
-  CODEX_COMMAND="$REMOTE_WORKSTREAMS_CODEX_COMMAND"
-elif [ -x "$CHATGPT_CODEX" ]; then
-  CODEX_COMMAND="$CHATGPT_CODEX"
-else
-  CODEX_COMMAND="codex"
-fi
+CODEX_COMMAND="codex"
 
 command -v uv >/dev/null 2>&1 || { echo "error=uv-missing hint=https://docs.astral.sh/uv/"; exit 1; }
 UV="$(command -v uv)"

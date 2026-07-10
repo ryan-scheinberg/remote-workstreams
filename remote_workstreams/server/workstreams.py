@@ -138,6 +138,7 @@ class WorkstreamManager:
             await self.substrate.kill(session)
             await self.notify(protocol.Error(message="workstream session failed to start"))
             return
+        await self.substrate.rename(session, title)
         await self.substrate.send(session, text)  # the full plan is the first message
         self.store.add_workstream(
             name, session.session_id, session.window, title, str(output), model, engine
@@ -150,11 +151,23 @@ class WorkstreamManager:
         await self.push_cards()
 
     async def end_workstream(self, name: str) -> None:
-        ws = self._workstreams.pop(name, None)
+        ws = self._workstreams.get(name)
         if ws is None:
             await self.notify(protocol.Error(message=f"unknown workstream: {name}"))
             return
         await self.substrate.kill(ws.session)
+        try:
+            await self.substrate.archive(ws.session)
+        except (OSError, RuntimeError):
+            ws.status = "gone"
+            self.store.set_workstream_status(name, "gone")
+            logger.exception("workstream archive failed", extra={"fields": {"name": name}})
+            await self.notify(
+                protocol.Error(message="workstream closed, but chat archival failed; tap End to retry")
+            )
+            await self.push_cards()
+            return
+        self._workstreams.pop(name)
         self.store.remove_workstream(name)
         log(logger, "workstream_ended", name=name)
         await self.push_cards()
