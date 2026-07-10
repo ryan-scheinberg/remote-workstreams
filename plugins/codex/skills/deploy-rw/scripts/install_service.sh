@@ -28,7 +28,7 @@ command -v tmux >/dev/null 2>&1 || { echo "error=tmux-missing hint=brew install 
 
 (cd "$REPO" && if [ "$STT_PROVIDER" = moonshine ] || [ "$TTS_PROVIDER" = moonshine ]; then uv sync --extra local-voice; else uv sync; fi)
 PYTHON="$(cd "$REPO" && uv run python -c 'import sys; print(sys._base_executable)')"
-PYTHONPATH="$(cd "$REPO" && uv run python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
+PYTHONPATH="$REPO:$(cd "$REPO" && uv run python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
 echo "deps=synced"
 
 mkdir -p "$HOME/Library/LaunchAgents" "$HOME/.remote-workstreams/logs"  # launchd won't create log dirs

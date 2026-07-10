@@ -19,7 +19,7 @@
         <string>remote_workstreams.server</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>__REPO__</string>
+    <string>__HOME__</string>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
