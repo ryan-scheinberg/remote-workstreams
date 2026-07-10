@@ -53,5 +53,9 @@
         <key>PATH</key>
         <string>__HOME__/.local/bin:__HOME__/.npm-global/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     </dict>
+    <key>UnsetEnvironmentVariables</key>
+    <array>
+        <string>__PYVENV_LAUNCHER__</string>
+    </array>
 </dict>
 </plist>
