@@ -183,7 +183,9 @@ class State(BaseModel):
 
 class Chat(BaseModel):
     type: Literal["chat"] = "chat"
-    role: Literal["user", "assistant", "activity"]
+    # "queued" = typed mid-turn, visible before the session takes it; the same
+    # text re-renders as "user" on consumption — that duplicate is by design.
+    role: Literal["user", "queued", "assistant", "activity"]
     text: str
     ts: str
     final: bool
@@ -219,7 +221,7 @@ class Workstreams(BaseModel):
 class LogEntry(BaseModel):
     """One workstream transcript line, shaped like Chat without the envelope."""
 
-    role: Literal["user", "assistant", "activity"]
+    role: Literal["user", "queued", "assistant", "activity"]
     text: str
     ts: str
 

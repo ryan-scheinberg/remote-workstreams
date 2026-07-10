@@ -29,6 +29,7 @@ from remote_workstreams.transcript import (
     AssistantText,
     CompactEnd,
     Entry,
+    QueuedText,
     ToolActivity,
     TranscriptTail,
     UserText,
@@ -111,6 +112,8 @@ def entry_chat(entry: Entry) -> protocol.Chat | None:
     """CC transcript entry → chat frame; TurnEnd is not chat."""
     if isinstance(entry, UserText):
         return protocol.Chat(role="user", text=entry.text, ts=entry.ts, final=True)
+    if isinstance(entry, QueuedText):
+        return protocol.Chat(role="queued", text=entry.text, ts=entry.ts, final=True)
     if isinstance(entry, AssistantText):
         return protocol.Chat(role="assistant", text=entry.text, ts=entry.ts, final=True)
     if isinstance(entry, ToolActivity):

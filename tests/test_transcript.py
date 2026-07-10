@@ -5,6 +5,7 @@ import pytest
 from remote_workstreams.transcript import (
     AssistantText,
     CompactEnd,
+    QueuedText,
     SessionVitals,
     ToolActivity,
     TranscriptTail,
@@ -37,6 +38,28 @@ def test_user_list_content_is_tool_result_not_chat():
 def test_user_command_caveat_skipped():
     raw = line(type="user", message={"content": "<command-name>/compact</command-name>"})
     assert parse_line(raw) == []
+
+
+def test_queue_operation_enqueue_is_queued_text():
+    """Input typed mid-turn is visible at send time, not just on consumption."""
+    raw = line(
+        type="queue-operation", operation="enqueue", timestamp=TS, content="focus on the parser"
+    )
+    assert parse_line(raw) == [QueuedText(text="focus on the parser", ts=TS)]
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"operation": "dequeue"},
+        {"operation": "remove"},
+        {"operation": "enqueue", "content": "<task-notification>x</task-notification>"},
+        {"operation": "enqueue", "content": "/compact"},
+        {"operation": "enqueue", "content": ""},
+    ],
+)
+def test_queue_operation_noise_is_not_chat(fields):
+    assert parse_line(line(type="queue-operation", timestamp=TS, **fields)) == []
 
 
 def test_assistant_thinking_text_and_tool_use():

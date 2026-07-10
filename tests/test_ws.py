@@ -396,11 +396,22 @@ def test_watch_workstream_replays_the_log_then_streams_new_lines(client, tmp_pat
             "reset": True,
         }
         with log_path.open("a") as f:
-            f.write(cc_line(type="user", message={"content": "queued directive"}, timestamp="t2"))
+            # A message typed mid-turn shows at enqueue time, then again as the
+            # user line when the session takes it.
+            f.write(
+                cc_line(
+                    type="queue-operation", operation="enqueue",
+                    content="focus the parser", timestamp="t2",
+                )
+            )
+            f.write(cc_line(type="user", message={"content": "focus the parser"}, timestamp="t3"))
         assert json.loads(ws.receive_text()) == {
             "type": "workstream_log",
             "workstream": "ws-known",
-            "entries": [{"role": "user", "text": "queued directive", "ts": "t2"}],
+            "entries": [
+                {"role": "queued", "text": "focus the parser", "ts": "t2"},
+                {"role": "user", "text": "focus the parser", "ts": "t3"},
+            ],
             "reset": False,
         }
 

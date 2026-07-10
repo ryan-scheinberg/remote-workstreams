@@ -271,6 +271,23 @@ button {
   color: var(--faint);
 }
 
+/* typed mid-turn: visible at once, faint until the session takes it (the same
+   text re-renders as a full user line on consumption) */
+.turn.queued {
+  margin-left: auto;
+  text-align: right;
+  font-size: 13px;
+  line-height: 1.6;
+  font-style: italic;
+  color: var(--faint);
+}
+.turn.queued::before {
+  content: "\203A ";  /* › */
+}
+.turn.queued::after {
+  content: " \22EF";  /* ⋯ waiting in the queue */
+}
+
 .turn.interim { opacity: 0.55; font-style: italic; }
 .turn.user.interim::after {
   content: "\258D";  /* ▍ */
@@ -718,7 +735,11 @@ button {
 #btn-ws-back:active { color: var(--text); background: var(--elev); }
 #btn-ws-back svg { width: 19px; height: 19px; }
 
-#ws-detail-actions { margin-top: 0; padding: 2px 16px 0; }
+#ws-detail-actions {
+  grid-template-columns: 1fr 1fr; /* Send latest + Compact; End lives in the header */
+  margin-top: 0;
+  padding: 2px 16px 0;
+}
 
 #ws-log { flex: 1; } /* the log takes everything between the actions and the composer */
 

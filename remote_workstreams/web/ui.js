@@ -32,7 +32,6 @@ const els = {
   wsDetailAgents: $("ws-detail-agents"),
   wsDetailEnd: $("ws-detail-end"),
   wsDetailSend: $("ws-detail-send"),
-  wsDetailCheck: $("ws-detail-check"),
   wsDetailCompact: $("ws-detail-compact"),
   wsLog: $("ws-log"),
   wsLogEmpty: $("ws-log-empty"),
@@ -103,9 +102,6 @@ export function init(h) {
   });
   confirmTap(els.wsDetailSend, () => {
     if (handlers.onSendToWorkstream(detailName)) toast("Routing the latest…");
-  });
-  confirmTap(els.wsDetailCheck, () => {
-    if (handlers.onCheckIn(detailName)) toast("Checking in…");
   });
   confirmTap(els.wsDetailCompact, () => {
     if (handlers.onCompactWorkstream(detailName)) toast("Compacting…");

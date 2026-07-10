@@ -29,6 +29,7 @@ SERVER_MESSAGES = [
     protocol.State(state="thinking"),
     protocol.Chat(role="assistant", text="hi there", ts="2026-07-03T12:00:00Z", final=True),
     protocol.Chat(role="activity", text="Bash: git status", ts="2026-07-03T12:00:01Z", final=True),
+    protocol.Chat(role="queued", text="ship it next", ts="2026-07-03T12:00:02Z", final=True),
     protocol.SpeechEnd(),
     protocol.Workstreams(
         workstreams=[

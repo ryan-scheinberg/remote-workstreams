@@ -22,6 +22,16 @@ class UserText:
 
 
 @dataclass(frozen=True)
+class QueuedText:
+    """User input typed mid-turn: Claude Code writes a queue-operation line at
+    send time, then a normal user line when the session consumes it — both
+    render, styled apart, so a sent message is visible before it's taken."""
+
+    text: str
+    ts: str
+
+
+@dataclass(frozen=True)
 class AssistantText:
     text: str
     ts: str
@@ -47,7 +57,7 @@ class CompactEnd:
     ts: str
 
 
-Entry = UserText | AssistantText | ToolActivity | TurnEnd | CompactEnd
+Entry = UserText | QueuedText | AssistantText | ToolActivity | TurnEnd | CompactEnd
 
 
 def _tool_label(block: dict) -> str:
@@ -81,6 +91,19 @@ def parse_line(raw: str) -> list[Entry]:
     if not isinstance(line, dict) or line.get("isSidechain") or line.get("isCompactSummary"):
         return []
     ts = line.get("timestamp") or ""
+    if line.get("type") == "queue-operation":
+        # enqueue carries the text at top level; dequeue/remove carry nothing.
+        # Same speech filter as user lines: task-notifications and slash
+        # commands queue too, and they are not chat.
+        content = line.get("content")
+        if (
+            line.get("operation") == "enqueue"
+            and isinstance(content, str)
+            and content
+            and not content.startswith(("<", "/"))
+        ):
+            return [QueuedText(text=content, ts=ts)]
+        return []
     if line.get("type") == "system":
         if line.get("subtype") == "turn_duration":
             return [TurnEnd(ts=ts)]
