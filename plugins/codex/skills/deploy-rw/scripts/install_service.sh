@@ -27,10 +27,12 @@ command -v tmux >/dev/null 2>&1 || { echo "error=tmux-missing hint=brew install 
 [ -f "$TEMPLATE" ] || { echo "error=template-missing path=$TEMPLATE"; exit 1; }
 
 (cd "$REPO" && if [ "$STT_PROVIDER" = moonshine ] || [ "$TTS_PROVIDER" = moonshine ]; then uv sync --extra local-voice; else uv sync; fi)
+PYTHON="$(cd "$REPO" && uv run python -c 'import sys; print(sys._base_executable)')"
+PYTHONPATH="$(cd "$REPO" && uv run python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
 echo "deps=synced"
 
 mkdir -p "$HOME/Library/LaunchAgents" "$HOME/.remote-workstreams/logs"  # launchd won't create log dirs
-sed -e "s|__UV__|$UV|g" -e "s|__REPO__|$REPO|g" -e "s|__HOME__|$HOME|g" -e "s|__PORT__|$PORT|g" -e "s|__CODEX_COMMAND__|$CODEX_COMMAND|g" -e "s|__STT_PROVIDER__|$STT_PROVIDER|g" -e "s|__TTS_PROVIDER__|$TTS_PROVIDER|g" -e "s|__MOONSHINE_LANGUAGE__|$MOONSHINE_LANGUAGE|g" -e "s|__MOONSHINE_STT_MODEL__|$MOONSHINE_STT_MODEL|g" -e "s|__MOONSHINE_TTS_LOCALE__|$MOONSHINE_TTS_LOCALE|g" -e "s|__MOONSHINE_TTS_VOICE__|$MOONSHINE_TTS_VOICE|g" -e "s|__MOONSHINE_TTS_SPEED__|$MOONSHINE_TTS_SPEED|g" -e "s|__MOONSHINE_MODEL_DIR__|$MOONSHINE_MODEL_DIR|g" "$TEMPLATE" > "$PLIST"
+sed -e "s|__UV__|$UV|g" -e "s|__PYTHON__|$PYTHON|g" -e "s|__PYTHONPATH__|$PYTHONPATH|g" -e "s|__REPO__|$REPO|g" -e "s|__HOME__|$HOME|g" -e "s|__PORT__|$PORT|g" -e "s|__CODEX_COMMAND__|$CODEX_COMMAND|g" -e "s|__STT_PROVIDER__|$STT_PROVIDER|g" -e "s|__TTS_PROVIDER__|$TTS_PROVIDER|g" -e "s|__MOONSHINE_LANGUAGE__|$MOONSHINE_LANGUAGE|g" -e "s|__MOONSHINE_STT_MODEL__|$MOONSHINE_STT_MODEL|g" -e "s|__MOONSHINE_TTS_LOCALE__|$MOONSHINE_TTS_LOCALE|g" -e "s|__MOONSHINE_TTS_VOICE__|$MOONSHINE_TTS_VOICE|g" -e "s|__MOONSHINE_TTS_SPEED__|$MOONSHINE_TTS_SPEED|g" -e "s|__MOONSHINE_MODEL_DIR__|$MOONSHINE_MODEL_DIR|g" "$TEMPLATE" > "$PLIST"
 echo "plist=$PLIST"
 echo "codex_command=$CODEX_COMMAND"
 echo "stt_provider=$STT_PROVIDER"

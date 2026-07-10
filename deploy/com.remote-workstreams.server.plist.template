@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Rendered by the deploy plugin: __REPO__ = absolute path to the remote-workstreams checkout,
+<!-- Rendered by the deploy plugin: __PYTHON__ = base Python executable,
+     __PYTHONPATH__ = the synced venv's site-packages,
+     __REPO__ = absolute path to the remote-workstreams checkout,
      __HOME__ = user home,
      __PORT__ = service port (must match what install_service.sh health-checks),
      __CODEX_COMMAND__ = the Codex executable the service launches,
@@ -11,10 +13,7 @@
     <string>com.remote-workstreams.server</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/bin/env</string>
-        <string>-u</string>
-        <string>__PYVENV_LAUNCHER__</string>
-        <string>__REPO__/.venv/bin/python</string>
+        <string>__PYTHON__</string>
         <string>-m</string>
         <string>remote_workstreams.server</string>
     </array>
@@ -32,6 +31,8 @@
     <dict>
         <key>HOME</key>
         <string>__HOME__</string>
+        <key>PYTHONPATH</key>
+        <string>__PYTHONPATH__</string>
         <key>REMOTE_WORKSTREAMS_PORT</key>
         <string>__PORT__</string>
         <key>REMOTE_WORKSTREAMS_CODEX_COMMAND</key>
@@ -56,9 +57,5 @@
         <key>PATH</key>
         <string>__HOME__/.local/bin:__HOME__/.npm-global/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     </dict>
-    <key>UnsetEnvironmentVariables</key>
-    <array>
-        <string>__PYVENV_LAUNCHER__</string>
-    </array>
 </dict>
 </plist>
