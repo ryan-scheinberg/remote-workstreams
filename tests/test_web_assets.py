@@ -80,6 +80,13 @@ def test_app_dispatch_handles_exactly_the_server_message_types():
     assert handled == SERVER_TYPES, f"app.js handles {handled}, protocol defines {SERVER_TYPES}"
 
 
+def test_takeover_stops_the_stale_tab_reconnect_loop():
+    js = (WEB / "app.js").read_text()
+    assert "reconnectBlocked" in js
+    assert 'msg.message === "another connection took over"' in js
+    assert "Reload this tab to take it back" in js
+
+
 def test_audio_formats_match_protocol():
     js = _js()
     assert f'"{protocol.MIC_FORMAT.encoding}"' in js

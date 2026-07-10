@@ -27,6 +27,7 @@ const app = {
   started: false, // a logged-in session is live
   attempts: 0,
   reconnectTimer: 0,
+  reconnectBlocked: false, // a takeover needs an explicit reload before this tab may reconnect
   wakeLock: null,
   hiddenAt: 0,
   watching: null, // workstream whose log the detail view follows
@@ -111,6 +112,7 @@ function lock() {
   app.session = null;
   app.started = false;
   app.ready = false;
+  app.reconnectBlocked = false;
   app.watching = null;
   ui.closeDetail();
   clearTimeout(app.reconnectTimer);
@@ -133,6 +135,7 @@ async function beginSession() {
 
   // Network first: audio unlock must never delay (or wedge) the connection.
   app.attempts = 0;
+  app.reconnectBlocked = false;
   connect();
   requestWakeLock();
 
@@ -161,6 +164,7 @@ function levelLoop() {
 
 function connect() {
   clearTimeout(app.reconnectTimer);
+  if (app.reconnectBlocked) return;
   if (app.ws && app.ws.readyState !== WebSocket.CLOSED) return;
   ui.setConnection("connecting");
 
@@ -206,12 +210,12 @@ function connect() {
     ui.setConnection("offline");
     ui.planPending(false); // pending work can't report back on a dead socket
     ui.compactPending(false);
-    scheduleReconnect();
+    if (!app.reconnectBlocked) scheduleReconnect();
   };
 }
 
 function scheduleReconnect() {
-  if (!app.started) return;
+  if (!app.started || app.reconnectBlocked) return;
   const delay = Math.min(500 * 2 ** app.attempts, 10000) * (0.75 + Math.random() * 0.5);
   app.attempts += 1;
   app.reconnectTimer = setTimeout(connect, delay);
@@ -293,6 +297,18 @@ function handleMessage(msg) {
       if (msg.message === "invalid credential") {
         lock();
         ui.toast("Session expired — unlock again.", true);
+        return;
+      }
+      // The server intentionally has one live socket.  A stale desktop tab
+      // must not auto-reconnect after the phone takes over, or it will steal
+      // the phone's socket back in a reconnect loop.  Reload this tab to take
+      // the session back deliberately.
+      if (msg.message === "another connection took over") {
+        app.reconnectBlocked = true;
+        clearTimeout(app.reconnectTimer);
+        ui.planPending(false);
+        ui.compactPending(false);
+        ui.toast("Another device is connected. Reload this tab to take it back.", true);
         return;
       }
       ui.planPending(false); // the pending work may be what errored
