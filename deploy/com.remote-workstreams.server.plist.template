@@ -11,6 +11,9 @@
     <string>com.remote-workstreams.server</string>
     <key>ProgramArguments</key>
     <array>
+        <string>/usr/bin/env</string>
+        <string>-u</string>
+        <string>__PYVENV_LAUNCHER__</string>
         <string>__REPO__/.venv/bin/python</string>
         <string>-m</string>
         <string>remote_workstreams.server</string>
