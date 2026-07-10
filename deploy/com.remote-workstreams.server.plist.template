@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Rendered by the deploy plugin: __UV__ = absolute path to uv,
-     __REPO__ = absolute path to the remote-workstreams checkout, __HOME__ = user home,
+<!-- Rendered by the deploy plugin: __REPO__ = absolute path to the remote-workstreams checkout,
+     __HOME__ = user home,
      __PORT__ = service port (must match what install_service.sh health-checks),
      __CODEX_COMMAND__ = the Codex executable the service launches,
      __STT_PROVIDER__/__TTS_PROVIDER__ = voice providers. -->
@@ -11,10 +11,7 @@
     <string>com.remote-workstreams.server</string>
     <key>ProgramArguments</key>
     <array>
-        <string>__UV__</string>
-        <string>run</string>
-        <string>--project</string>
-        <string>__REPO__</string>
+        <string>__REPO__/.venv/bin/python</string>
         <string>python</string>
         <string>-m</string>
         <string>remote_workstreams.server</string>
