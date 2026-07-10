@@ -55,7 +55,7 @@
         <string>__MOONSHINE_MODEL_DIR__</string>
         <!-- launchd's default PATH misses Homebrew; the service spawns tmux by name. -->
         <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <string>__HOME__/.local/bin:__HOME__/.npm-global/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     </dict>
 </dict>
 </plist>
