@@ -632,7 +632,7 @@ button {
 #btn-hush[aria-pressed="true"] .hush-slash { display: block; }
 
 /* The keyboard pill stands in for the input at rest; tapping swaps them. */
-#btn-keyboard {
+#btn-keyboard, #ws-keyboard {
   flex: 1;
   height: 52px;
   display: grid;
@@ -641,11 +641,11 @@ button {
   border-radius: 14px;
   color: var(--faint);
 }
-#btn-keyboard:active { background: var(--elev); color: var(--text); }
-#btn-keyboard svg { width: 22px; height: 22px; }
-#btn-keyboard[hidden] { display: none; }
+#btn-keyboard:active, #ws-keyboard:active { background: var(--elev); color: var(--text); }
+#btn-keyboard svg, #ws-keyboard svg { width: 22px; height: 22px; }
+#btn-keyboard[hidden], #ws-keyboard[hidden] { display: none; }
 
-#composer-input[hidden] { display: none; }
+#composer-input[hidden], #ws-input[hidden] { display: none; }
 
 #composer-input, #ws-input {
   flex: 1;
@@ -664,7 +664,6 @@ button {
 #composer-input:focus, #ws-input:focus {
   border-color: color-mix(in srgb, var(--teal) 45%, transparent);
 }
-#ws-input::placeholder { color: var(--faint); }
 
 #composer-send, #ws-composer-send {
   width: 46px;
@@ -677,7 +676,8 @@ button {
   place-items: center;
 }
 #composer-send:active, #ws-composer-send:active { background: var(--elev); }
-#composer-send[hidden] { display: none; } /* [hidden] loses to display:grid without this */
+/* [hidden] loses to display:grid without this */
+#composer-send[hidden], #ws-composer-send[hidden] { display: none; }
 
 /* ---------- workstream detail: tap a card for the live log + compose ---------- */
 
@@ -735,13 +735,22 @@ button {
 #btn-ws-back:active { color: var(--text); background: var(--elev); }
 #btn-ws-back svg { width: 19px; height: 19px; }
 
-#ws-detail-actions {
-  grid-template-columns: 1fr 1fr; /* Send latest + Compact; End lives in the header */
-  margin-top: 0;
-  padding: 2px 16px 0;
-}
+#ws-log { flex: 1; } /* the log takes everything between the header and the composer */
 
-#ws-log { flex: 1; } /* the log takes everything between the actions and the composer */
+/* Compact sits where the mics do on the main composer; idle it reads the
+   context %, armed it turns amber via .ws-compact.armed. */
+#ws-detail-compact {
+  height: 52px;
+  flex: none;
+  padding: 0 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--dim);
+  white-space: nowrap;
+}
+#ws-detail-compact:active { background: var(--elev); color: var(--text); }
 
 #ws-composer {
   display: flex;

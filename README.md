@@ -46,9 +46,11 @@ reconnect and resume mid-conversation.
   answer out loud.
 - **Tap a card** for the workstream's detail view: the live transcript as a log
   (rendered instantly from cache, streamed from the session's own record) over a
-  compose bar that queues typed messages straight into the session — no injector,
+  composer that queues typed messages straight into the session — no injector,
   nothing forked. A message typed while the session is mid-turn shows immediately
-  as a faint queued line, then as a full line when the session takes it.
+  as a faint queued line, then as a full line when the session takes it. The
+  card's Compact/context meter rides beside the keyboard pill; everything else
+  stays on the card.
 - **Approvals.** Destructive shell commands inside Claude workstreams relay to the
   phone as approve/deny cards; everything else runs without interruption.
 - **The picker** (hamburger) sets the conversation's and future workstreams' engine

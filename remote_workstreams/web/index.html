@@ -136,21 +136,25 @@
       <span id="ws-detail-agents" class="ws-agents" hidden></span>
       <button id="ws-detail-end" class="ws-end" type="button" aria-label="End workstream">✕</button>
     </header>
-    <!-- No Check in here: the live log below is the check-in, and its narration
-         lands in the hub convo this view covers. -->
-    <div id="ws-detail-actions" class="ws-actions">
-      <button id="ws-detail-send" class="ws-send" type="button">Send latest</button>
-      <button id="ws-detail-compact" class="ws-compact" type="button">Compact</button>
-    </div>
     <section id="ws-log" aria-live="polite">
       <p id="ws-log-empty">The workstream's transcript lands here.</p>
     </section>
+    <!-- Mirrors the main composer: Compact (doubling as the context meter)
+         where the mics sit, then the keyboard pill that unfolds into the
+         input. Send latest and Check in stay hub verbs — the log below IS
+         the check-in. -->
     <div id="ws-composer">
-      <input id="ws-input" type="text"
-             autocomplete="off" autocapitalize="sentences" enterkeyhint="send"
-             placeholder="Message the workstream">
-      <button id="ws-composer-send" type="button" aria-label="Send to workstream">
+      <button id="ws-detail-compact" class="ws-compact" type="button">Compact</button>
+      <input id="ws-input" type="text" hidden
+             autocomplete="off" autocapitalize="sentences" enterkeyhint="send">
+      <button id="ws-composer-send" type="button" aria-label="Send to workstream" hidden>
         <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button id="ws-keyboard" type="button" aria-label="Type to the workstream">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="3" y="6.5" width="18" height="11.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M6.4 10h.01M9.8 10h.01M13.2 10h.01M16.6 10h.01M6.4 12.8h.01M9.8 12.8h.01M13.2 12.8h.01M16.6 12.8h.01M8.5 15.4h7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
       </button>
     </div>
   </section>

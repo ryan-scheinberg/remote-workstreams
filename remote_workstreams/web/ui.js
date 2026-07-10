@@ -31,12 +31,12 @@ const els = {
   wsDetailModel: $("ws-detail-model"),
   wsDetailAgents: $("ws-detail-agents"),
   wsDetailEnd: $("ws-detail-end"),
-  wsDetailSend: $("ws-detail-send"),
   wsDetailCompact: $("ws-detail-compact"),
   wsLog: $("ws-log"),
   wsLogEmpty: $("ws-log-empty"),
   wsInput: $("ws-input"),
   wsComposerSend: $("ws-composer-send"),
+  wsKeyboard: $("ws-keyboard"),
   screenLogin: $("screen-login"),
   screenPairing: $("screen-pairing"),
   loginUnlock: $("login-unlock"),
@@ -96,12 +96,13 @@ export function init(h) {
   els.workstreams.addEventListener("scroll", updateWsDots, { passive: true });
   // Detail view: static controls bound once; detailName picks the target.
   els.wsBack.addEventListener("click", closeDetail);
+  els.wsKeyboard.addEventListener("click", () => setWsComposerOpen(true));
+  els.wsInput.addEventListener("blur", () => {
+    if (!els.wsInput.value.trim()) setWsComposerOpen(false);
+  });
   els.wsComposerSend.addEventListener("click", sendWsComposer);
   els.wsInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendWsComposer();
-  });
-  confirmTap(els.wsDetailSend, () => {
-    if (handlers.onSendToWorkstream(detailName)) toast("Routing the latest…");
   });
   confirmTap(els.wsDetailCompact, () => {
     if (handlers.onCompactWorkstream(detailName)) toast("Compacting…");
@@ -421,7 +422,8 @@ export function closeDetail() {
   if (detailName === null) return;
   detailName = null;
   els.wsDetail.hidden = true;
-  els.wsInput.blur();
+  els.wsInput.value = ""; // a draft never carries into another workstream
+  setWsComposerOpen(false);
   handlers.onCloseWorkstream();
 }
 
@@ -431,6 +433,14 @@ export function workstreamLog(name, entries, reset) {
   if (reset) logReset();
   logAppend(entries);
   if (reset) els.wsLog.scrollTop = els.wsLog.scrollHeight;
+}
+
+// The main composer's keyboard-pill pattern: the input + send swap in on demand.
+function setWsComposerOpen(open) {
+  els.wsInput.hidden = !open;
+  els.wsComposerSend.hidden = !open;
+  els.wsKeyboard.hidden = open;
+  if (open) els.wsInput.focus();
 }
 
 function sendWsComposer() {
