@@ -36,15 +36,19 @@ class Config:
     )
 
     def __post_init__(self) -> None:
+        allowed_by_kind = {
+            "stt_provider": {"deepgram", "moonshine"},
+            "tts_provider": {"cartesia", "moonshine"},
+        }
         for name, value in (
             ("stt_provider", self.stt_provider),
             ("tts_provider", self.tts_provider),
         ):
             normalized = value.strip().lower()
-            allowed = {"deepgram", "cartesia", "moonshine"}
+            allowed = allowed_by_kind[name]
             if normalized not in allowed:
                 raise ValueError(
-                    f"unsupported {name} {value!r}; use deepgram, cartesia, or moonshine"
+                    f"unsupported {name} {value!r}; use {', '.join(sorted(allowed))}"
                 )
             setattr(self, name, normalized)
         if self.moonshine_tts_speed <= 0:

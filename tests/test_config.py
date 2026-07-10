@@ -25,6 +25,19 @@ def test_config_rejects_unknown_voice_provider():
     try:
         Config(stt_provider="unknown")
     except ValueError as exc:
-        assert "deepgram, cartesia, or moonshine" in str(exc)
+        assert "deepgram" in str(exc)
     else:  # pragma: no cover - assertion branch
         raise AssertionError("unknown provider should be rejected")
+
+
+def test_config_rejects_provider_for_the_wrong_voice_direction():
+    for kwargs, expected in (
+        ({"stt_provider": "cartesia"}, "stt_provider"),
+        ({"tts_provider": "deepgram"}, "tts_provider"),
+    ):
+        try:
+            Config(**kwargs)
+        except ValueError as exc:
+            assert expected in str(exc)
+        else:  # pragma: no cover - assertion branch
+            raise AssertionError("provider should be rejected")
