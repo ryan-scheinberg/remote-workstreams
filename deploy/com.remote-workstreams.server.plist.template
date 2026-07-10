@@ -12,7 +12,6 @@
     <key>ProgramArguments</key>
     <array>
         <string>__REPO__/.venv/bin/python</string>
-        <string>python</string>
         <string>-m</string>
         <string>remote_workstreams.server</string>
     </array>
