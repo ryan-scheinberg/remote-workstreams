@@ -97,6 +97,10 @@ Apply by what's installed:
   `injector_model` = `gpt-5.6-luna`, `convo_model` and `workstream_model` =
   `gpt-5.6-terra` so the first boot doesn't try to spawn a missing `claude` binary.
 
+`role_root=missing` in check.sh → no role skill exists to launch workstreams with (see
+README); set `store.set_setting('role_skill', '')` so workstreams boot plain instead of
+typing a dead command.
+
 All of it is an easy flip later — re-run this step after installing the other CLI.
 
 ## Step 3 — Tailscale

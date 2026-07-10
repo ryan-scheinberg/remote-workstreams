@@ -379,6 +379,18 @@ async def test_codex_pick_launches_a_codex_workstream(rig):
     (card,) = notify.messages[-1].workstreams
     assert (card.model, card.engine) == ("gpt-5.6-luna", "codex")
 
+
+async def test_missing_role_skill_boots_workstreams_plain(rig):
+    # deploy-rw sets role_skill="" when check.sh finds no role-root on the box.
+    manager, store, substrate, notify, tmp_path = rig
+    store.set_setting("role_skill", "")
+    await launch(rig)
+    assert substrate.spawned[-1].spec.initial_prompt is None
+
+    manager.set_model("workstream", "gpt-5.6-luna")
+    await launch(rig)
+    assert substrate.spawned[-1].spec.initial_prompt is None
+
     manager2 = WorkstreamManager(  # engine survives a restart via the row
         substrate,
         store,

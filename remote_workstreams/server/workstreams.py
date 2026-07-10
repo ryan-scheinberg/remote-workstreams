@@ -325,7 +325,14 @@ class WorkstreamManager:
             initial_prompt=f"/remote-workstreams:{skill} {args}",
         )
 
+    def _role_skill(self) -> str:
+        # deploy-rw sets this to "" when no role-root skill is on the box, so
+        # workstreams boot plain instead of typing a command that resolves to nothing.
+        setting = self.store.get_setting("role_skill")
+        return "role-root" if setting is None else setting
+
     def _workstream_spec(self, name: str, title: str, model: str) -> SessionSpec:
+        role_skill = self._role_skill()
         if engines.engine_of(model) == "codex":
             # No settings file: the phone-approval relay is a Claude Code hook;
             # codex workstreams run sandboxed instead (see substrate).
@@ -335,7 +342,7 @@ class WorkstreamManager:
                 effort=WORKSTREAM_EFFORT,
                 display_name=title,
                 engine="codex",
-                initial_prompt="$role-root",
+                initial_prompt=f"${role_skill}" if role_skill else None,
             )
         return SessionSpec(
             name=name,
@@ -343,7 +350,7 @@ class WorkstreamManager:
             effort=WORKSTREAM_EFFORT,
             display_name=title,
             settings_file=self._settings_file,
-            initial_prompt="/role-root",
+            initial_prompt=f"/{role_skill}" if role_skill else None,
             remote_control=True,  # workstreams show up in the iOS Claude app too
         )
 

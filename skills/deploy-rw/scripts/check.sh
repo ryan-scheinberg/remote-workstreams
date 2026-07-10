@@ -57,6 +57,13 @@ else
   echo "codex=missing"
 fi
 
+# --- role-root: the workstream-launch skill, not part of this repo (deploy-rw offers a fallback) ---
+if [ -L "$HOME/.claude/skills/role-root" ] || [ -L "$HOME/.codex/skills/role-root" ]; then
+  echo "role_root=present"
+else
+  echo "role_root=missing"
+fi
+
 # --- service repo (a git clone of remote-workstreams, NOT the plugin marketplace copy) ---
 if [ -f "$REPO/pyproject.toml" ] && grep -q '^name = "remote-workstreams"' "$REPO/pyproject.toml"; then
   echo "repo=$REPO"

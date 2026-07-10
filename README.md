@@ -37,9 +37,7 @@ reconnect and resume mid-conversation.
   keyboard pill unfolds into a composer for when you can't talk at all.
 - **`+ Workstream`** marks the conversation since the last launch, has a planner
   session distill it into a stint plan, and launches an execution session on it —
-  one button, no review step. The execution session opens by invoking your
-  `role-root` skill (see Requirements) — without one installed, the button still
-  fires but the session never picks up a role.
+  one button, no review step.
 - **Live cards**, one per workstream: state-colored title (green waiting, blue
   waiting with subagents running, amber mid-turn, red errored or gone), subagent
   count, and a context meter that doubles as the Compact button. `Send latest`
@@ -113,13 +111,11 @@ iPhone (Safari PWA) ──WebSocket/HTTPS over Tailscale──> Mac
   [Codex CLI](https://developers.openai.com/codex). Either alone is a complete
   install; every session is your existing CLI setup — skills, hooks, MCP servers
   and all
-- A `role-root` skill on your global skill path (`~/.claude/skills` and/or
-  `~/.codex/skills`). Every workstream launches by typing `/role-root` (Claude) or
-  `$role-root` (Codex) as its first message — deploy-rw does not install or check
-  for this skill, so without it the launch types a command that resolves to
-  nothing. [ryan-scheinberg/harness](https://github.com/ryan-scheinberg/harness)
-  is the reference implementation; swap in your own, or edit the `initial_prompt`
-  in `remote_workstreams/server/workstreams.py` to point at whatever you use
+- Optional: a `role-root` skill on your global skill path launches every
+  workstream into a role instead of a bare session — deploy-rw detects it and
+  falls back cleanly if it's missing.
+  [ryan-scheinberg/harness](https://github.com/ryan-scheinberg/harness) is the
+  reference implementation
 
 ## Install
 
