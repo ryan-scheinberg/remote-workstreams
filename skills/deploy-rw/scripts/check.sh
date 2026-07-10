@@ -86,7 +86,13 @@ if [ -z "$TS" ]; then
   echo "tailscale=missing"
 else
   echo "tailscale=$TS"
-  status_json="$("$TS" status --json 2>/dev/null)" || status_json=""
+  TS_SOCKET="${REMOTE_WORKSTREAMS_TAILSCALE_SOCKET:-}"
+  if [ -z "$TS_SOCKET" ] && [ -S "$HOME/.local/share/tailscale/tailscaled.sock" ]; then
+    TS_SOCKET="$HOME/.local/share/tailscale/tailscaled.sock"
+  fi
+  TS_ARGS=()
+  [ -n "$TS_SOCKET" ] && TS_ARGS+=("--socket=$TS_SOCKET")
+  status_json="$("$TS" "${TS_ARGS[@]}" status --json 2>/dev/null)" || status_json=""
   if [ -n "$status_json" ]; then
     # First DNSName in the pretty-printed JSON belongs to the Self block.
     backend="$(printf '%s\n' "$status_json" | sed -n 's/.*"BackendState": *"\([^"]*\)".*/\1/p' | head -1)"
@@ -96,7 +102,7 @@ else
   else
     echo "tailscale_state=down"
   fi
-  if "$TS" serve status 2>/dev/null | grep -q "127.0.0.1:$PORT"; then
+  if "$TS" "${TS_ARGS[@]}" serve status 2>/dev/null | grep -q "127.0.0.1:$PORT"; then
     echo "serve=configured"
   else
     echo "serve=not-configured"
