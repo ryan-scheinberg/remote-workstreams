@@ -39,7 +39,15 @@ echo "stt_provider=$STT_PROVIDER"
 echo "tts_provider=$TTS_PROVIDER"
 
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
-launchctl bootstrap "gui/$(id -u)" "$PLIST"
+loaded=0
+for _ in 1 2 3 4 5; do
+  if launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null; then
+    loaded=1
+    break
+  fi
+  sleep 1
+done
+[ "$loaded" -eq 1 ] || { echo "error=launchd-bootstrap-failed plist=$PLIST"; exit 1; }
 echo "service=loaded"
 
 for _ in $(seq 1 30); do
