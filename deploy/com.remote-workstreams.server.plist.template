@@ -14,6 +14,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>__PYTHON__</string>
+        <string>-S</string>
         <string>-m</string>
         <string>remote_workstreams.server</string>
     </array>
