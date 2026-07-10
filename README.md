@@ -7,9 +7,11 @@ a thin browser client reached over your own tailnet. No cloud infrastructure bey
 the STT and TTS APIs; nothing between your phone and your Mac but Tailscale.
 
 <p align="center">
-  <img src="docs/phone-main.png" width="330" alt="The conversation, a live workstream card, and the action bar">
-  &nbsp;&nbsp;
-  <img src="docs/phone-menu.png" width="330" alt="The engine and model picker">
+  <img src="docs/phone-main.png" width="260" alt="The conversation, a live workstream card, and the action bar">
+  &nbsp;
+  <img src="docs/phone-detail.png" width="260" alt="A workstream's detail view: live log, queued message, compose bar">
+  &nbsp;
+  <img src="docs/phone-menu.png" width="260" alt="The engine and model picker">
 </p>
 
 The core design: **every model interaction is a real, interactive agent session**,
@@ -42,13 +44,19 @@ reconnect and resume mid-conversation.
   routes the newest conversation delta through an injector session into that
   workstream; `Check in` has the conversation read the workstream's transcript and
   answer out loud.
+- **Tap a card** for the workstream's detail view: the live transcript as a log
+  (rendered instantly from cache, streamed from the session's own record) over a
+  compose bar that queues typed messages straight into the session — no injector,
+  nothing forked. A message typed while the session is mid-turn shows immediately
+  as a faint queued line, then as a full line when the session takes it.
 - **Approvals.** Destructive shell commands inside Claude workstreams relay to the
   phone as approve/deny cards; everything else runs without interruption.
 - **The picker** (hamburger) sets the conversation's and future workstreams' engine
-  and model, and only offers the engines wired on the Mac — a Codex-only box shows
-  three buttons, not six. Every button on the phone arms-then-confirms — the armed
-  label states the consequence (blue `swap?` is safe, red `clear?` wipes the
-  conversation).
+  and model, and a `plans` row picks who runs the planner and injector — `opus`
+  thinking at high or `luna` at xhigh. Every row offers only the engines wired on
+  the Mac — a Codex-only box shows the Codex tiers alone. Every button on the phone
+  arms-then-confirms — the armed label states the consequence (blue `swap?` is
+  safe, red `clear?` wipes the conversation).
 
 ## Engines
 
