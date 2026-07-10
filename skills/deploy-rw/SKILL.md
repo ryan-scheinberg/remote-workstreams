@@ -1,6 +1,6 @@
 ---
 name: deploy-rw
-description: Deploy remote-workstreams on this Mac — tmux + Tailscale checks, engine wiring (Claude Code / Codex), Deepgram/Cartesia keys into the macOS Keychain, pairing PIN, launchd install, tailscale serve, pairing QR, round-trip test. Use when the user wants to install, deploy, or repair a remote-workstreams service.
+description: Deploy remote-workstreams on this Mac — tmux + Tailscale checks, engine wiring (Claude Code / Codex), optional Deepgram/Cartesia keys or local Moonshine voice, pairing PIN, launchd install, tailscale serve, pairing QR, round-trip test. Use when the user wants to install, deploy, or repair a remote-workstreams service.
 ---
 
 # Deploy remote-workstreams
@@ -114,10 +114,15 @@ All of it is an easy flip later — re-run this step after installing the other 
   name inside the tailnet; you need it in Steps 7–8. If it's empty, MagicDNS is off —
   the user enables it in the Tailscale admin console under DNS.
 
-## Step 4 — Provider API keys
+## Step 4 — Voice provider selection and API keys
 
-For each of `deepgram-api-key` and `cartesia-api-key` that `check.sh` reports
-`missing` (or that the user wants to rotate): ask the user to paste the key
+The free local path is supported: set `REMOTE_WORKSTREAMS_STT_PROVIDER=moonshine` and/or
+`REMOTE_WORKSTREAMS_TTS_PROVIDER=moonshine` before installing. `install_service.sh` then
+installs the `local-voice` extra and the service downloads models into the configured cache.
+Do not ask for a Deepgram or Cartesia key for a provider set to `moonshine`.
+
+For each selected cloud provider, if `check.sh` reports its key `missing` (or the user
+wants to rotate it): ask the user to paste the key
 (consoles: console.deepgram.com, play.cartesia.ai), then with their OK store it:
 
 ```
@@ -205,8 +210,8 @@ is no longer valid.
 
 ## Step 9 — Final check and report
 
-Run the audio round-trip test (synthesized speech in → transcript → reply audio out,
-uses the live keys):
+Run the audio round-trip test (synthesized speech in → transcript → reply audio out;
+local providers use cached models and cloud providers use their Keychain keys):
 
 ```
 (cd "$REPO" && uv run python -m remote_workstreams.audio.roundtrip)

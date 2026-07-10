@@ -7,3 +7,24 @@ def test_codex_command_uses_the_environment_override(monkeypatch):
     )
 
     assert Config.load().codex_command == "/Applications/ChatGPT.app/Contents/Resources/codex"
+
+
+def test_local_voice_provider_configuration(monkeypatch):
+    monkeypatch.setenv("REMOTE_WORKSTREAMS_STT_PROVIDER", "Moonshine")
+    monkeypatch.setenv("REMOTE_WORKSTREAMS_TTS_PROVIDER", "moonshine")
+    monkeypatch.setenv("REMOTE_WORKSTREAMS_MOONSHINE_TTS_SPEED", "1.15")
+
+    config = Config.load()
+
+    assert config.stt_provider == "moonshine"
+    assert config.tts_provider == "moonshine"
+    assert config.moonshine_tts_speed == 1.15
+
+
+def test_config_rejects_unknown_voice_provider():
+    try:
+        Config(stt_provider="unknown")
+    except ValueError as exc:
+        assert "deepgram, cartesia, or moonshine" in str(exc)
+    else:  # pragma: no cover - assertion branch
+        raise AssertionError("unknown provider should be rejected")

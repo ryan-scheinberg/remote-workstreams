@@ -17,6 +17,11 @@ dependencies = [
     "qrcode>=8.0",
 ]
 
+[project.optional-dependencies]
+local-voice = [
+    "moonshine-voice>=0.0.67,<0.1",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=8",

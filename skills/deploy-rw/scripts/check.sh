@@ -8,6 +8,10 @@ set -uo pipefail
 
 REPO="${1:-$HOME/remote-workstreams}"
 PORT="${REMOTE_WORKSTREAMS_PORT:-8400}"
+STT_PROVIDER="${REMOTE_WORKSTREAMS_STT_PROVIDER:-deepgram}"
+TTS_PROVIDER="${REMOTE_WORKSTREAMS_TTS_PROVIDER:-cartesia}"
+echo "stt_provider=$STT_PROVIDER"
+echo "tts_provider=$TTS_PROVIDER"
 
 # --- OS ---
 if [ "$(uname -s)" = "Darwin" ]; then
@@ -101,12 +105,25 @@ fi
 
 # --- Keychain secrets (presence only; values are never printed) ---
 for name in deepgram-api-key cartesia-api-key pin-hash; do
+  required=1
+  [ "$name" = deepgram-api-key ] && [ "$STT_PROVIDER" = moonshine ] && required=0
+  [ "$name" = cartesia-api-key ] && [ "$TTS_PROVIDER" = moonshine ] && required=0
   if security find-generic-password -s remote-workstreams -a "$name" >/dev/null 2>&1; then
     echo "secret_${name}=present"
-  else
+  elif [ "$required" -eq 1 ]; then
     echo "secret_${name}=missing"
+  else
+    echo "secret_${name}=not-required"
   fi
 done
+if [ "$STT_PROVIDER" = moonshine ] || [ "$TTS_PROVIDER" = moonshine ]; then
+  if [ -x "$REPO/.venv/bin/python" ] && "$REPO/.venv/bin/python" -c 'import importlib.util,sys; sys.exit(0 if importlib.util.find_spec("moonshine_voice") else 1)' 2>/dev/null; then
+    echo "moonshine=installed"
+  else
+    echo "moonshine=missing"
+  fi
+  echo "moonshine_model_dir=${REMOTE_WORKSTREAMS_MOONSHINE_MODEL_DIR:-$HOME/.remote-workstreams/models/moonshine}"
+fi
 
 # --- launchd service ---
 PLIST="$HOME/Library/LaunchAgents/com.remote-workstreams.server.plist"

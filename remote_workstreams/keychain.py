@@ -1,4 +1,4 @@
-"""Secrets via the macOS Keychain (`security` CLI), service name "remote-workstreams".
+"""Optional provider secrets via the macOS Keychain (`security` CLI), service name "remote-workstreams".
 
 Env vars win when set (dev and tests); the deploy plugin writes the Keychain entries.
 Secret names: deepgram-api-key, cartesia-api-key, pin-hash.

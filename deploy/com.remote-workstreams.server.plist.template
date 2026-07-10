@@ -3,7 +3,8 @@
 <!-- Rendered by the deploy plugin: __UV__ = absolute path to uv,
      __REPO__ = absolute path to the remote-workstreams checkout, __HOME__ = user home,
      __PORT__ = service port (must match what install_service.sh health-checks),
-     __CODEX_COMMAND__ = the Codex executable the service launches. -->
+     __CODEX_COMMAND__ = the Codex executable the service launches,
+     __STT_PROVIDER__/__TTS_PROVIDER__ = voice providers. -->
 <plist version="1.0">
 <dict>
     <key>Label</key>
@@ -36,6 +37,22 @@
         <string>__PORT__</string>
         <key>REMOTE_WORKSTREAMS_CODEX_COMMAND</key>
         <string>__CODEX_COMMAND__</string>
+        <key>REMOTE_WORKSTREAMS_STT_PROVIDER</key>
+        <string>__STT_PROVIDER__</string>
+        <key>REMOTE_WORKSTREAMS_TTS_PROVIDER</key>
+        <string>__TTS_PROVIDER__</string>
+        <key>REMOTE_WORKSTREAMS_MOONSHINE_LANGUAGE</key>
+        <string>__MOONSHINE_LANGUAGE__</string>
+        <key>REMOTE_WORKSTREAMS_MOONSHINE_STT_MODEL</key>
+        <string>__MOONSHINE_STT_MODEL__</string>
+        <key>REMOTE_WORKSTREAMS_MOONSHINE_TTS_LOCALE</key>
+        <string>__MOONSHINE_TTS_LOCALE__</string>
+        <key>REMOTE_WORKSTREAMS_MOONSHINE_TTS_VOICE</key>
+        <string>__MOONSHINE_TTS_VOICE__</string>
+        <key>REMOTE_WORKSTREAMS_MOONSHINE_TTS_SPEED</key>
+        <string>__MOONSHINE_TTS_SPEED__</string>
+        <key>REMOTE_WORKSTREAMS_MOONSHINE_MODEL_DIR</key>
+        <string>__MOONSHINE_MODEL_DIR__</string>
         <!-- launchd's default PATH misses Homebrew; the service spawns tmux by name. -->
         <key>PATH</key>
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
