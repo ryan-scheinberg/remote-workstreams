@@ -126,6 +126,10 @@ async def _handle(runtime: ConvoRuntime, conn: WSConnection, text: str) -> None:
         runtime.send_to_workstream(msg.workstream)
     elif isinstance(msg, protocol.CheckIn):
         await runtime.check_in(msg.workstream)
+    elif isinstance(msg, protocol.WorkstreamInput):
+        runtime.workstream_input(msg.workstream, msg.text)
+    elif isinstance(msg, protocol.WatchWorkstream):
+        runtime.watch_workstream(msg.workstream)
     elif isinstance(msg, protocol.EndWorkstream):
         runtime.end_workstream(msg.workstream)
     elif isinstance(msg, protocol.Compact):

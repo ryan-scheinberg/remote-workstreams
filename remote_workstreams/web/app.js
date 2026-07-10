@@ -12,6 +12,7 @@ import * as ui from "./ui.js";
 
 // The web can't distinguish phone-lock from an app switch; time hidden is the proxy.
 const AUTO_LOCK_HIDDEN_S = 120;
+const LOG_CACHE = 300; // per-workstream lines kept for instant detail reopens
 
 const app = {
   ws: null,
@@ -28,6 +29,8 @@ const app = {
   reconnectTimer: 0,
   wakeLock: null,
   hiddenAt: 0,
+  watching: null, // workstream whose log the detail view follows
+  logs: new Map(), // workstream name → cached log entries
 };
 
 // ---- boot ----
@@ -44,6 +47,18 @@ ui.init({
   onClearConvo: () => send({ type: "clear_convo" }),
   onSendToWorkstream: (name) => send({ type: "send_to_workstream", workstream: name }),
   onCheckIn: (name) => send({ type: "check_in", workstream: name }),
+  onWorkstreamInput: (name, text) =>
+    send({ type: "workstream_input", workstream: name, text }),
+  // Opening renders from cache; the watch's reset replay lands on top of it.
+  onOpenWorkstream: (name) => {
+    app.watching = name;
+    sendIfOpen({ type: "watch_workstream", workstream: name });
+    return app.logs.get(name) || [];
+  },
+  onCloseWorkstream: () => {
+    app.watching = null;
+    sendIfOpen({ type: "watch_workstream", workstream: null });
+  },
   onCompactWorkstream: (name) => send({ type: "compact_workstream", workstream: name }),
   onSetModel: (target, model) => send({ type: "set_model", target, model }),
   onEndWorkstream: (name) => send({ type: "end_workstream", workstream: name }),
@@ -96,6 +111,8 @@ function lock() {
   app.session = null;
   app.started = false;
   app.ready = false;
+  app.watching = null;
+  ui.closeDetail();
   clearTimeout(app.reconnectTimer);
   const ws = app.ws;
   app.ws = null;
@@ -164,6 +181,8 @@ function connect() {
     ws.send(JSON.stringify({ type: "hello", credential: app.session }));
     if (app.muted) ws.send(JSON.stringify({ type: "mute", muted: true }));
     if (app.hushed) ws.send(JSON.stringify({ type: "hush", muted: true }));
+    // An open detail view re-watches: the server's watch died with the old socket.
+    if (app.watching) ws.send(JSON.stringify({ type: "watch_workstream", workstream: app.watching }));
   };
 
   ws.onmessage = (e) => {
@@ -207,6 +226,11 @@ function send(msg) {
   return true;
 }
 
+// Watch state syncs quietly — stale on a dead socket is fine, reconnect re-sends it.
+function sendIfOpen(msg) {
+  if (app.ws?.readyState === WebSocket.OPEN) app.ws.send(JSON.stringify(msg));
+}
+
 // ---- protocol (server → client) ----
 
 function handleMessage(msg) {
@@ -241,9 +265,18 @@ function handleMessage(msg) {
     case "workstreams":
       ui.renderWorkstreams(msg.workstreams);
       ui.setConvoContext(msg.convo_context_pct);
-      ui.setModels(msg.convo_model, msg.workstream_model);
+      ui.setModels(msg.convo_model, msg.workstream_model, msg.plans_model);
       if (msg.models) ui.setEnabledModels(msg.models); // absent from older servers
+      for (const name of app.logs.keys()) {
+        if (!msg.workstreams.some((ws) => ws.name === name)) app.logs.delete(name);
+      }
       break;
+    case "workstream_log": {
+      const cached = msg.reset ? [] : app.logs.get(msg.workstream) || [];
+      app.logs.set(msg.workstream, cached.concat(msg.entries).slice(-LOG_CACHE));
+      ui.workstreamLog(msg.workstream, msg.entries, msg.reset);
+      break;
+    }
     case "convo_cleared":
       ui.clearChat();
       ui.toast("Fresh conversation.");

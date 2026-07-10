@@ -80,6 +80,23 @@ class CheckIn(BaseModel):
     workstream: str
 
 
+class WorkstreamInput(BaseModel):
+    """A message typed in the detail view, queued straight into the workstream
+    session — the same paste path injector directives ride, so mid-turn input
+    queues and nothing forks."""
+
+    type: Literal["workstream_input"] = "workstream_input"
+    workstream: str
+    text: str
+
+
+class WatchWorkstream(BaseModel):
+    """Follow one workstream's log in the detail view; None stops the feed."""
+
+    type: Literal["watch_workstream"] = "watch_workstream"
+    workstream: str | None = None
+
+
 class EndWorkstream(BaseModel):
     """Kill the workstream's tmux window and drop its card. The CC transcript survives."""
 
@@ -101,10 +118,11 @@ class CompactWorkstream(BaseModel):
 class SetModel(BaseModel):
     """Pick a model from the settings menu; the engine rides on the model name.
     convo switches live (a same-engine Claude pick types /model, anything else
-    clears and starts fresh); workstream only affects future spawns."""
+    clears and starts fresh); workstream only affects future spawns; plans is
+    one pick for both ephemeral passthroughs (planner and injector)."""
 
     type: Literal["set_model"] = "set_model"
-    target: Literal["convo", "workstream"]
+    target: Literal["convo", "workstream", "plans"]
     model: str
 
     @field_validator("model")
@@ -136,6 +154,8 @@ ClientMessage = Annotated[
         NewWorkstream,
         SendToWorkstream,
         CheckIn,
+        WorkstreamInput,
+        WatchWorkstream,
         EndWorkstream,
         Compact,
         CompactWorkstream,
@@ -192,7 +212,26 @@ class Workstreams(BaseModel):
     convo_context_pct: int | None = None  # the convo session's fill, for its Compact button
     convo_model: str = "fable"  # current picks, so the settings menu shows them
     workstream_model: str = "fable"
+    plans_model: str = "opus"  # the planner+injector pick
     models: list[str] = list(MODELS)  # engines wired on this box; the picker hides the rest
+
+
+class LogEntry(BaseModel):
+    """One workstream transcript line, shaped like Chat without the envelope."""
+
+    role: Literal["user", "assistant", "activity"]
+    text: str
+    ts: str
+
+
+class WorkstreamLog(BaseModel):
+    """The watched workstream's log: a replay on watch (reset=True), then
+    increments as new transcript lines land."""
+
+    type: Literal["workstream_log"] = "workstream_log"
+    workstream: str
+    entries: list[LogEntry]
+    reset: bool = False
 
 
 class ConvoCleared(BaseModel):
@@ -227,6 +266,7 @@ ServerMessage = Annotated[
         Chat,
         SpeechEnd,
         Workstreams,
+        WorkstreamLog,
         ConvoCleared,
         Compacted,
         ApprovalRequest,

@@ -25,6 +25,19 @@ const els = {
   composerInput: $("composer-input"),
   composerSend: $("composer-send"),
   toast: $("toast"),
+  wsDetail: $("ws-detail"),
+  wsBack: $("btn-ws-back"),
+  wsDetailTitle: $("ws-detail-title"),
+  wsDetailModel: $("ws-detail-model"),
+  wsDetailAgents: $("ws-detail-agents"),
+  wsDetailEnd: $("ws-detail-end"),
+  wsDetailSend: $("ws-detail-send"),
+  wsDetailCheck: $("ws-detail-check"),
+  wsDetailCompact: $("ws-detail-compact"),
+  wsLog: $("ws-log"),
+  wsLogEmpty: $("ws-log-empty"),
+  wsInput: $("ws-input"),
+  wsComposerSend: $("ws-composer-send"),
   screenLogin: $("screen-login"),
   screenPairing: $("screen-pairing"),
   loginUnlock: $("login-unlock"),
@@ -82,6 +95,27 @@ export function init(h) {
     if (handlers.onClearConvo()) toast("Starting a fresh conversation…");
   });
   els.workstreams.addEventListener("scroll", updateWsDots, { passive: true });
+  // Detail view: static controls bound once; detailName picks the target.
+  els.wsBack.addEventListener("click", closeDetail);
+  els.wsComposerSend.addEventListener("click", sendWsComposer);
+  els.wsInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") sendWsComposer();
+  });
+  confirmTap(els.wsDetailSend, () => {
+    if (handlers.onSendToWorkstream(detailName)) toast("Routing the latest…");
+  });
+  confirmTap(els.wsDetailCheck, () => {
+    if (handlers.onCheckIn(detailName)) toast("Checking in…");
+  });
+  confirmTap(els.wsDetailCompact, () => {
+    if (handlers.onCompactWorkstream(detailName)) toast("Compacting…");
+  }, "Compact?");
+  confirmTap(els.wsDetailEnd, () => {
+    if (handlers.onEndWorkstream(detailName)) {
+      toast("Ended.");
+      closeDetail();
+    }
+  }, "End?");
   els.menuBtn.addEventListener("click", () => {
     const open = els.menu.hidden;
     els.menu.hidden = !open;
@@ -130,9 +164,10 @@ function markModel(target, model) {
   applyModelVisibility();
 }
 
-export function setModels(convo, workstream) {
+export function setModels(convo, workstream, plans) {
   markModel("convo", convo);
   markModel("workstream", workstream);
+  if (plans) markModel("plans", plans); // absent from older servers
 }
 
 // Only models whose engine is wired on the Mac get buttons (the server sends
@@ -336,6 +371,81 @@ export function setConvoContext(pct) {
   els.compactBtn.querySelector(".label").textContent = pct == null ? "Compact" : `${pct}%`;
 }
 
+// ---- workstream detail: tap a card for its live log + direct compose ----
+
+const MAX_LOG = 300; // DOM lines kept; older ones fall off the top
+
+let detailName = null; // workstream open in the detail view, or null
+let lastCards = []; // the latest workstreams push, for opening the detail
+
+function renderDetailHead(ws) {
+  els.wsDetail.dataset.tone = tone(ws);
+  els.wsDetailTitle.textContent = shortTitle(ws.title || ws.name);
+  els.wsDetailModel.textContent = ws.model;
+  els.wsDetailAgents.hidden = !(ws.agents > 0);
+  els.wsDetailAgents.textContent = ws.agents;
+  els.wsDetailAgents.setAttribute("aria-label", `${ws.agents} subagents running`);
+  // Doubles as the context meter, like the card's button; armed copy wins.
+  if (!els.wsDetailCompact.classList.contains("armed")) {
+    els.wsDetailCompact.textContent = ws.context_pct == null ? "Compact" : `${ws.context_pct}%`;
+  }
+}
+
+function logReset() {
+  els.wsLog.replaceChildren(els.wsLogEmpty);
+  els.wsLogEmpty.hidden = false;
+}
+
+function logAppend(entries) {
+  if (!entries.length) return;
+  els.wsLogEmpty.hidden = true;
+  const wasPinned = pinned(els.wsLog);
+  for (const entry of entries) {
+    const el = document.createElement("p");
+    el.className = `turn ${entry.role}`;
+    el.textContent = entry.text;
+    els.wsLog.append(el);
+  }
+  while (els.wsLog.children.length - 1 > MAX_LOG) els.wsLog.children[1].remove();
+  keepPinned(els.wsLog, wasPinned);
+}
+
+function openDetail(name) {
+  const ws = lastCards.find((w) => w.name === name);
+  if (!ws) return;
+  detailName = name;
+  renderDetailHead(ws);
+  logReset();
+  logAppend(handlers.onOpenWorkstream(name)); // cached log first — opening is instant
+  els.wsDetail.hidden = false;
+  els.wsLog.scrollTop = els.wsLog.scrollHeight;
+}
+
+export function closeDetail() {
+  if (detailName === null) return;
+  detailName = null;
+  els.wsDetail.hidden = true;
+  els.wsInput.blur();
+  handlers.onCloseWorkstream();
+}
+
+// The watch feed: a reset replay replaces the cached render, increments append.
+export function workstreamLog(name, entries, reset) {
+  if (name !== detailName) return;
+  if (reset) logReset();
+  logAppend(entries);
+  if (reset) els.wsLog.scrollTop = els.wsLog.scrollHeight;
+}
+
+function sendWsComposer() {
+  const text = els.wsInput.value.trim();
+  if (!text) return;
+  if (handlers.onWorkstreamInput(detailName, text)) {
+    els.wsInput.value = "";
+    toast("Queued for the workstream.");
+  }
+}
+
 // ---- workstream pager: one card visible, swipe sideways for the others ----
 
 let wsSnapshot = ""; // skip re-rendering unchanged cards: pushes come every 5s
@@ -362,6 +472,13 @@ export function renderWorkstreams(workstreams) {
   if (added) planPending(false); // the launched workstream is the "done" signal
   wsCount = workstreams.length;
 
+  lastCards = workstreams;
+  if (detailName) {
+    const open = workstreams.find((ws) => ws.name === detailName);
+    if (open) renderDetailHead(open);
+    else closeDetail(); // ended under us; back to the hub
+  }
+
   const snap = JSON.stringify(
     workstreams.map((ws) => [
       ws.name, ws.title, ws.status, ws.state, ws.agents, ws.context_pct, ws.model,
@@ -379,6 +496,10 @@ export function renderWorkstreams(workstreams) {
     const card = document.createElement("article");
     card.className = `ws ${ws.status}`;
     card.dataset.tone = tone(ws);
+    card.addEventListener("click", (e) => {
+      if (e.target.closest("button")) return; // buttons keep their own taps
+      openDetail(ws.name);
+    });
 
     const head = document.createElement("div");
     head.className = "ws-head";

@@ -8,6 +8,7 @@ from server_fakes import FakeSubstrate
 from remote_workstreams import protocol
 from remote_workstreams.server.store import Store
 from remote_workstreams.server.workstreams import WorkstreamManager
+from remote_workstreams.transcript import AssistantText
 
 PLAN_TEXT = "Stint: Wire the auth flow\n\nGoal: ship it.\n"
 
@@ -214,6 +215,45 @@ async def test_send_to_unknown_workstream_pushes_error(rig):
     assert error.type == "error" and "unknown workstream" in error.message
 
 
+async def test_workstream_input_queues_into_the_existing_session(rig):
+    """The detail view's compose bar: straight to substrate.send on the running
+    session — the same queued paste inject rides. Nothing spawns, nothing forks."""
+    manager, store, substrate, notify, tmp_path = rig
+    await launch(rig)
+    session = substrate.spawned[-1]
+    spawned = len(substrate.spawned)
+
+    await manager.workstream_input("ws-wire-the-auth-flow", "ship the retry loop first")
+    assert substrate.sent[-1] == (session.window, "ship the retry loop first")
+    assert len(substrate.spawned) == spawned  # no planner, no injector, no new session
+
+    await manager.workstream_input("ws-nope", "hello")
+    error = notify.messages[-1]
+    assert error.type == "error" and "unknown workstream" in error.message
+
+
+async def test_workstream_input_reaches_codex_sessions_the_same_way(rig):
+    manager, store, substrate, notify, tmp_path = rig
+    manager.set_model("workstream", "gpt-5.6-luna")
+    await launch(rig)
+    session = substrate.spawned[-1]
+    spawned = len(substrate.spawned)
+
+    await manager.workstream_input("ws-wire-the-auth-flow", "focus on the parser")
+    assert substrate.sent[-1] == (session.window, "focus on the parser")
+    assert len(substrate.spawned) == spawned
+
+
+async def test_log_tail_parses_by_engine(rig):
+    manager, store, substrate, notify, tmp_path = rig
+    manager.set_model("workstream", "gpt-5.6-luna")
+    await launch(rig)  # the codex fake's greeting is a rollout agent_message line
+
+    (entry,) = manager.log_tail("ws-wire-the-auth-flow").read_new()
+    assert entry == AssistantText(text="Ready.", ts="")
+    assert manager.log_tail("ws-nope") is None
+
+
 async def test_cards_track_window_aliveness(rig):
     manager, store, substrate, notify, tmp_path = rig
     await launch(rig)
@@ -363,17 +403,44 @@ async def test_planner_and_injector_follow_their_store_settings(rig):
 
     await launch(rig)
     planner = substrate.spawned[-2].spec  # [-1] is the workstream it launched
-    assert (planner.engine, planner.model, planner.effort) == ("codex", "gpt-5.6-terra", "high")
+    assert (planner.engine, planner.model, planner.effort) == ("codex", "gpt-5.6-terra", "xhigh")
     assert planner.plugin_dir is None  # codex finds the role skills in ~/.codex/skills
     assert planner.initial_prompt.startswith("$role-stint-plan convo=")
 
     task = asyncio.create_task(manager.send_to_workstream("ws-wire-the-auth-flow"))
     await wait_for_spawn(substrate, count=3)
     injector = substrate.spawned[-1].spec
-    assert (injector.engine, injector.model, injector.effort) == ("codex", "gpt-5.6-terra", "high")
+    assert (injector.engine, injector.model, injector.effort) == ("codex", "gpt-5.6-terra", "xhigh")
     assert injector.initial_prompt.startswith("$role-inject convo=")
     output_path(injector).write_text("directive")
     await task
+
+
+async def test_plans_pick_sets_both_passthroughs_and_their_effort(rig):
+    """The menu's plans row: one pick drives planner and injector; effort rides
+    on it — opus at high, codex at xhigh."""
+    manager, store, substrate, notify, tmp_path = rig
+    manager.set_model("plans", "gpt-5.6-luna")
+    assert store.get_setting("planner_model") == "gpt-5.6-luna"
+    assert store.get_setting("injector_model") == "gpt-5.6-luna"
+
+    await launch(rig)
+    planner = substrate.spawned[-2].spec
+    assert (planner.engine, planner.model, planner.effort) == ("codex", "gpt-5.6-luna", "xhigh")
+
+    task = asyncio.create_task(manager.send_to_workstream("ws-wire-the-auth-flow"))
+    await wait_for_spawn(substrate, count=3)
+    injector = substrate.spawned[-1].spec
+    assert (injector.engine, injector.model, injector.effort) == ("codex", "gpt-5.6-luna", "xhigh")
+    output_path(injector).write_text("directive")
+    await task
+
+    assert notify.messages[-1].plans_model == "gpt-5.6-luna"
+
+    manager.set_model("plans", "opus")
+    await launch(rig, plan_text="Stint: Write the docs\n\nGoal: docs.\n")
+    planner = substrate.spawned[-2].spec
+    assert (planner.model, planner.effort) == ("opus", "high")
 
 
 async def test_push_models_lists_only_wired_engines(rig):

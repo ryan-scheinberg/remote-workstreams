@@ -9,6 +9,7 @@ from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from server_fakes import FakeConn, Fakes, make_app, seed_session
+from remote_workstreams import engines
 from remote_workstreams.audio.state import PipelineState
 from remote_workstreams.protocol import (
     Approval,
@@ -23,6 +24,8 @@ from remote_workstreams.protocol import (
     SendToWorkstream,
     SetModel,
     TextInput,
+    WatchWorkstream,
+    WorkstreamInput,
 )
 from remote_workstreams.server.runtime import ProtocolSink
 from remote_workstreams.server import runtime as runtime_module
@@ -250,6 +253,7 @@ class RecordingManager:
         self.calls: list[tuple] = []
         self.convo_transcript = Path("/transcripts/convo.jsonl")
         self.stored_convo_model = "fable"
+        self.log_paths: dict[str, Path] = {}
 
     def convo_model(self) -> str:
         return self.stored_convo_model
@@ -272,6 +276,13 @@ class RecordingManager:
     def transcript_path(self, name: str) -> Path | None:
         return Path(f"/transcripts/{name}.jsonl") if name == "ws-known" else None
 
+    async def workstream_input(self, name: str, text: str) -> None:
+        self.calls.append(("workstream_input", name, text))
+
+    def log_tail(self, name: str):
+        path = self.log_paths.get(name)
+        return engines.tail(path, "claude") if path is not None else None
+
 
 def test_buttons_reach_manager_compact_reaches_bridge(client, fakes):
     manager = RecordingManager()
@@ -282,6 +293,7 @@ def test_buttons_reach_manager_compact_reaches_bridge(client, fakes):
         ws.send_text(SendToWorkstream(workstream="ws-auth").model_dump_json())
         ws.send_text(Compact().model_dump_json())
         ws.send_text(CompactWorkstream(workstream="ws-auth").model_dump_json())
+        ws.send_text(WorkstreamInput(workstream="ws-auth", text="ship it").model_dump_json())
         ws.send_text(CheckIn(workstream="ws-known").model_dump_json())
         # check_in speaks through the pipeline: consume its turn frames
         assert json.loads(ws.receive_text())["state"] == "thinking"
@@ -289,11 +301,12 @@ def test_buttons_reach_manager_compact_reaches_bridge(client, fakes):
         assert json.loads(ws.receive_text())["type"] == "speech_end"
         assert json.loads(ws.receive_text())["state"] == "listening"
 
-        wait_for(lambda: len(manager.calls) == 3)
+        wait_for(lambda: len(manager.calls) == 4)
         assert manager.calls == [
             ("new_workstream",),
             ("send_to_workstream", "ws-auth"),
             ("compact_workstream", "ws-auth"),
+            ("workstream_input", "ws-auth", "ship it"),
         ]
         assert fakes.bridge.slashes == ["/compact"]
         directive = fakes.pipelines[-1].texts[-1]
@@ -310,12 +323,15 @@ def test_set_model_persists_and_convo_switches_live(client, fakes):
         hello(ws)
         ws.send_text(SetModel(target="convo", model="sonnet").model_dump_json())
         ws.send_text(SetModel(target="workstream", model="opus").model_dump_json())
-        wait_for(lambda: manager.calls.count(("push_cards",)) == 2)
+        ws.send_text(SetModel(target="plans", model="gpt-5.6-luna").model_dump_json())
+        wait_for(lambda: manager.calls.count(("push_cards",)) == 3)
     assert manager.calls == [
         ("set_model", "convo", "sonnet"),
         ("push_cards",),
         ("set_model", "workstream", "opus"),
         ("push_cards",),  # workstream picks apply at spawn: no slash, just persisted
+        ("set_model", "plans", "gpt-5.6-luna"),
+        ("push_cards",),  # same for the planner/injector pick
     ]
     assert fakes.bridge.slashes == ["/model sonnet"]  # only the convo session switches live
 
@@ -354,6 +370,70 @@ def test_clear_convo_resets_and_repoints_the_manager(client, fakes):
         assert json.loads(ws.receive_text()) == {"type": "convo_cleared"}
         assert fakes.convo_resets == 1
         assert manager.convo_transcript == fakes.fresh_transcript
+
+
+def cc_line(**fields) -> str:
+    return json.dumps(fields) + "\n"
+
+
+def test_watch_workstream_replays_the_log_then_streams_new_lines(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(runtime_module, "_WATCH_POLL_S", 0.01)
+    manager = RecordingManager()
+    log_path = tmp_path / "ws-known.jsonl"
+    log_path.write_text(
+        cc_line(type="assistant", message={"content": [{"type": "text", "text": "Ready."}]})
+        + cc_line(type="system", subtype="turn_duration", durationMs=1)  # not log
+    )
+    manager.log_paths["ws-known"] = log_path
+    client.app_state.runtime.workstreams = manager
+    with client.websocket_connect("/ws") as ws:
+        hello(ws)
+        ws.send_text(WatchWorkstream(workstream="ws-known").model_dump_json())
+        assert json.loads(ws.receive_text()) == {
+            "type": "workstream_log",
+            "workstream": "ws-known",
+            "entries": [{"role": "assistant", "text": "Ready.", "ts": ""}],
+            "reset": True,
+        }
+        with log_path.open("a") as f:
+            f.write(cc_line(type="user", message={"content": "queued directive"}, timestamp="t2"))
+        assert json.loads(ws.receive_text()) == {
+            "type": "workstream_log",
+            "workstream": "ws-known",
+            "entries": [{"role": "user", "text": "queued directive", "ts": "t2"}],
+            "reset": False,
+        }
+
+
+def test_watch_none_and_disconnect_stop_the_feed(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(runtime_module, "_WATCH_POLL_S", 0.01)
+    manager = RecordingManager()
+    log_path = tmp_path / "ws-known.jsonl"
+    log_path.write_text("")
+    manager.log_paths["ws-known"] = log_path
+    runtime = client.app_state.runtime
+    runtime.workstreams = manager
+    with client.websocket_connect("/ws") as ws:
+        hello(ws)
+        ws.send_text(WatchWorkstream(workstream="ws-known").model_dump_json())
+        # An empty transcript still resets — the client drops its stale cache.
+        assert json.loads(ws.receive_text())["entries"] == []
+        ws.send_text(WatchWorkstream(workstream=None).model_dump_json())
+        wait_for(lambda: runtime._watch_task is None)
+
+        ws.send_text(WatchWorkstream(workstream="ws-known").model_dump_json())
+        wait_for(lambda: runtime._watch_task is not None)
+    wait_for(lambda: runtime._watch_task is None)  # detach cancelled it
+
+
+def test_watch_unknown_workstream_pushes_error(client):
+    client.app_state.runtime.workstreams = RecordingManager()
+    with client.websocket_connect("/ws") as ws:
+        hello(ws)
+        ws.send_text(WatchWorkstream(workstream="ws-missing").model_dump_json())
+        assert json.loads(ws.receive_text()) == {
+            "type": "error", "message": "unknown workstream: ws-missing",
+        }
 
 
 def test_check_in_unknown_workstream_pushes_error(client, fakes):

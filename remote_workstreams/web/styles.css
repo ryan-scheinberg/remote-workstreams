@@ -222,7 +222,7 @@ button {
 
 /* ---------- chat ---------- */
 
-#chat {
+#chat, #ws-log {
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
@@ -232,7 +232,7 @@ button {
   -webkit-mask-image: linear-gradient(to bottom, transparent, black 26px);
 }
 
-#chat-empty {
+#chat-empty, #ws-log-empty {
   margin-top: 22px;
   text-align: center;
   font-family: var(--serif);
@@ -443,15 +443,15 @@ button {
 }
 
 /* name + dot carry the session state: green waiting, blue waiting with
-   subagents, amber mid-turn, red errored / gone */
-.ws[data-tone="green"] .ws-title { color: var(--teal); }
-.ws[data-tone="blue"] .ws-title { color: var(--blue); }
-.ws[data-tone="amber"] .ws-title { color: var(--amber); }
-.ws[data-tone="red"] .ws-title { color: var(--danger); }
-.ws[data-tone="green"] .ws-dot { background: var(--teal); box-shadow: 0 0 8px var(--teal); }
-.ws[data-tone="blue"] .ws-dot { background: var(--blue); box-shadow: 0 0 8px var(--blue); }
-.ws[data-tone="amber"] .ws-dot { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
-.ws[data-tone="red"] .ws-dot { background: var(--danger); }
+   subagents, amber mid-turn, red errored / gone (cards and the detail header) */
+[data-tone="green"] .ws-title { color: var(--teal); }
+[data-tone="blue"] .ws-title { color: var(--blue); }
+[data-tone="amber"] .ws-title { color: var(--amber); }
+[data-tone="red"] .ws-title { color: var(--danger); }
+[data-tone="green"] .ws-dot { background: var(--teal); box-shadow: 0 0 8px var(--teal); }
+[data-tone="blue"] .ws-dot { background: var(--blue); box-shadow: 0 0 8px var(--blue); }
+[data-tone="amber"] .ws-dot { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+[data-tone="red"] .ws-dot { background: var(--danger); }
 
 .ws-model {
   flex: none;
@@ -630,7 +630,7 @@ button {
 
 #composer-input[hidden] { display: none; }
 
-#composer-input {
+#composer-input, #ws-input {
   flex: 1;
   width: 0; /* WebKit: the size-attr minimum ignores min-width:0 in flex rows */
   min-width: 0;
@@ -644,9 +644,12 @@ button {
   -webkit-user-select: text;
   user-select: text;
 }
-#composer-input:focus { border-color: color-mix(in srgb, var(--teal) 45%, transparent); }
+#composer-input:focus, #ws-input:focus {
+  border-color: color-mix(in srgb, var(--teal) 45%, transparent);
+}
+#ws-input::placeholder { color: var(--faint); }
 
-#composer-send {
+#composer-send, #ws-composer-send {
   width: 46px;
   height: 46px;
   flex: none;
@@ -656,8 +659,75 @@ button {
   display: grid;
   place-items: center;
 }
-#composer-send:active { background: var(--elev); }
+#composer-send:active, #ws-composer-send:active { background: var(--elev); }
 #composer-send[hidden] { display: none; } /* [hidden] loses to display:grid without this */
+
+/* ---------- workstream detail: tap a card for the live log + compose ---------- */
+
+#ws-detail {
+  position: absolute;
+  inset: 0;
+  z-index: 10; /* over the hub; the menu (15), toast, and auth screens stay above */
+  display: flex;
+  flex-direction: column;
+  animation: slide-in 0.22s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+#ws-detail[hidden] { display: none; }
+@keyframes slide-in {
+  from { opacity: 0; transform: translateX(28px); }
+}
+
+/* the home screen's atmosphere, under the content (z-index 10 makes this a
+   stacking context, so -1 sits between the hub behind and the view's children) */
+#ws-detail::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(120% 85% at 50% 0%, rgba(63, 224, 176, 0.045), transparent 55%),
+    var(--bg);
+}
+#ws-detail::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+#ws-detail-top {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: calc(var(--sat) + 12px) 16px 8px;
+}
+#ws-detail-top .ws-title { font-size: 17px; }
+
+#btn-ws-back {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  color: var(--dim);
+  border: 1px solid var(--line);
+}
+#btn-ws-back:active { color: var(--text); background: var(--elev); }
+#btn-ws-back svg { width: 19px; height: 19px; }
+
+#ws-detail-actions { margin-top: 0; padding: 2px 16px 0; }
+
+#ws-log { flex: 1; } /* the log takes everything between the actions and the composer */
+
+#ws-composer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px calc(var(--sab) + 12px);
+}
 
 /* ---------- toast ---------- */
 

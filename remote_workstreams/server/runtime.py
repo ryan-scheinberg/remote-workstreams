@@ -25,11 +25,20 @@ from remote_workstreams.audio.state import PipelineState
 from remote_workstreams.server.approvals import Approvals
 from remote_workstreams.server.logs import log
 from remote_workstreams.server.workstreams import WorkstreamManager
-from remote_workstreams.transcript import AssistantText, CompactEnd, Entry, ToolActivity, UserText
+from remote_workstreams.transcript import (
+    AssistantText,
+    CompactEnd,
+    Entry,
+    ToolActivity,
+    TranscriptTail,
+    UserText,
+)
 
 logger = logging.getLogger("remote_workstreams.server.runtime")
 
 _PIPELINE_RECONNECT_S = 1.0
+_WATCH_POLL_S = 0.5  # detail-view log feed
+_LOG_REPLAY_LIMIT = 200  # matches the convo history replay
 
 STTFactory = Callable[[], STTAdapter]
 TTSFactory = Callable[[], TTSAdapter]
@@ -109,6 +118,14 @@ def entry_chat(entry: Entry) -> protocol.Chat | None:
     return None
 
 
+def entry_log(entry: Entry) -> protocol.LogEntry | None:
+    """Transcript entry → detail-view log line; TurnEnd/CompactEnd are not log."""
+    chat = entry_chat(entry)
+    if chat is None:
+        return None
+    return protocol.LogEntry(role=chat.role, text=chat.text, ts=chat.ts)
+
+
 class ProtocolSink:
     """AudioSink → protocol frames. transcript() carries STT user interims only."""
 
@@ -154,6 +171,7 @@ class ConvoRuntime:
         self._pipeline_task: asyncio.Task | None = None
         self._fanout_task: asyncio.Task | None = None
         self._status_task: asyncio.Task | None = None
+        self._watch_task: asyncio.Task | None = None
         self._button_tasks: set[asyncio.Task] = set()
         self._lock = asyncio.Lock()
         self._muted = False
@@ -164,7 +182,7 @@ class ConvoRuntime:
         self._status_task = asyncio.create_task(self.workstreams.run())
 
     async def shutdown(self) -> None:
-        for task in (self._fanout_task, self._status_task, *self._button_tasks):
+        for task in (self._fanout_task, self._status_task, self._watch_task, *self._button_tasks):
             if task is not None:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
@@ -220,6 +238,34 @@ class ConvoRuntime:
         )
         if self.pipeline is not None:
             await self.pipeline.text(directive)
+
+    def workstream_input(self, name: str, text: str) -> None:
+        self._background(self.workstreams.workstream_input(name, text))
+
+    def watch_workstream(self, name: str | None) -> None:
+        """The detail view's log feed: one watched workstream at a time; None stops."""
+        if self._watch_task is not None:
+            self._watch_task.cancel()
+            self._watch_task = None
+        if name is None:
+            return
+        tail = self.workstreams.log_tail(name)
+        if tail is None:
+            self._background(self.push(protocol.Error(message=f"unknown workstream: {name}")))
+            return
+        self._watch_task = asyncio.create_task(self._watch(name, tail))
+        log(logger, "workstream_watched", name=name)
+
+    async def _watch(self, name: str, tail: TranscriptTail) -> None:
+        entries = [line for e in tail.read_new() if (line := entry_log(e)) is not None]
+        await self.push(
+            protocol.WorkstreamLog(workstream=name, entries=entries[-_LOG_REPLAY_LIMIT:], reset=True)
+        )
+        while True:
+            await asyncio.sleep(_WATCH_POLL_S)
+            new = [line for e in tail.read_new() if (line := entry_log(e)) is not None]
+            if new:
+                await self.push(protocol.WorkstreamLog(workstream=name, entries=new))
 
     def set_muted(self, muted: bool) -> None:
         self._muted = muted
@@ -280,6 +326,11 @@ class ConvoRuntime:
         conn, self.conn, self.push.conn = self.conn, None, None
         pipeline, self.pipeline = self.pipeline, None
         task, self._pipeline_task = self._pipeline_task, None
+        watch, self._watch_task = self._watch_task, None  # the next socket re-watches
+        if watch is not None:
+            watch.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await watch
         if pipeline is not None:
             with contextlib.suppress(Exception):
                 await pipeline.close()

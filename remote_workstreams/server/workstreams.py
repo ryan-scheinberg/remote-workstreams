@@ -20,17 +20,22 @@ from remote_workstreams.bootstrap import CONVO_MODEL
 from remote_workstreams.server.logs import log
 from remote_workstreams.server.store import Store
 from remote_workstreams.substrate import CCSession, SessionSpec, Substrate
-from remote_workstreams.transcript import AssistantText
+from remote_workstreams.transcript import AssistantText, TranscriptTail
 
 logger = logging.getLogger("remote_workstreams.server.workstreams")
 
 # Session roster: ephemeral passthroughs think hard, workstreams execute.
-# Models are only defaults — store settings win (the menu sets workstream_model;
-# deploy sets planner_model/injector_model to the install engine's thinker, e.g.
-# gpt-5.6-terra on a Codex-driven install). Effort is fixed regardless of model.
-PLANNER_MODEL, PLANNER_EFFORT = "opus", "high"
-INJECTOR_MODEL, INJECTOR_EFFORT = "opus", "high"
+# Models are only defaults — store settings win (the menu sets workstream_model
+# and the plans pick; deploy seeds planner_model/injector_model to the install
+# engine's thinker, e.g. gpt-5.6-terra on a Codex-driven install).
+PLANNER_MODEL = "opus"
+INJECTOR_MODEL = "opus"
 WORKSTREAM_MODEL, WORKSTREAM_EFFORT = "fable", "xhigh"
+
+
+def _plans_effort(model: str) -> str:
+    """Planner/injector effort rides on the pick: opus at high, codex at xhigh."""
+    return "xhigh" if engines.engine_of(model) == "codex" else "high"
 
 Notify = Callable[[object], Awaitable[None]]
 
@@ -115,11 +120,12 @@ class WorkstreamManager:
         plan_id = uuid.uuid4().hex[:8]
         output = self._data_dir / "plans" / f"plan-{plan_id}.md"
         output.parent.mkdir(parents=True, exist_ok=True)
+        model = self.planner_model()
         spec = self._passthrough_spec(
             "plan",
             "role-stint-plan",
-            self.planner_model(),
-            PLANNER_EFFORT,
+            model,
+            _plans_effort(model),
             f"convo={self.convo_transcript} since_line={since} output={output}",
         )
         planner = await self.substrate.spawn(spec)
@@ -181,11 +187,12 @@ class WorkstreamManager:
         current = self._convo_lines()
         output = self._data_dir / "injects" / f"inject-{uuid.uuid4().hex[:8]}.md"
         output.parent.mkdir(parents=True, exist_ok=True)
+        model = self.injector_model()
         spec = self._passthrough_spec(
             "inject",
             "role-inject",
-            self.injector_model(),
-            INJECTOR_EFFORT,
+            model,
+            _plans_effort(model),
             f"convo={self.convo_transcript} since_line={since}"
             f" workstream={ws.session.transcript} output={output}",
         )
@@ -198,6 +205,23 @@ class WorkstreamManager:
         await self.substrate.send(ws.session, directive)
         self.store.set_marker(current)
         log(logger, "workstream_injected", name=name)
+
+    async def workstream_input(self, name: str, text: str) -> None:
+        """A message typed on the phone, queued straight into the session — the
+        same paste path injector directives ride, so mid-turn input queues and
+        nothing forks."""
+        ws = self._workstreams.get(name)
+        if ws is None:
+            await self.notify(protocol.Error(message=f"unknown workstream: {name}"))
+            return
+        await self.substrate.send(ws.session, text)
+        log(logger, "workstream_input", name=name)
+
+    def log_tail(self, name: str) -> TranscriptTail | None:
+        """A fresh incremental reader over the workstream's transcript, parsing
+        by its engine — the detail view's log feed."""
+        ws = self._workstreams.get(name)
+        return engines.tail(ws.session.transcript, ws.engine) if ws is not None else None
 
     async def compact_workstream(self, name: str) -> None:
         ws = self._workstreams.get(name)
@@ -243,6 +267,7 @@ class WorkstreamManager:
                 convo_context_pct=self._convo_vitals.context_pct,
                 convo_model=self.convo_model(),
                 workstream_model=self.workstream_model(),
+                plans_model=self.plans_model(),
                 models=self.enabled_models(),
             )
         )
@@ -259,6 +284,11 @@ class WorkstreamManager:
     def injector_model(self) -> str:
         return self.store.get_setting("injector_model") or INJECTOR_MODEL
 
+    def plans_model(self) -> str:
+        """What the menu's plans row shows; the picker sets both passthroughs,
+        so the planner's setting stands for the pair."""
+        return self.planner_model()
+
     def enabled_models(self) -> list[str]:
         """The models the phone's picker offers: only engines wired on this box.
         The deploy skill sets the `engines` setting; unset means both."""
@@ -266,7 +296,10 @@ class WorkstreamManager:
         return [m for m in engines.MODELS if engines.engine_of(m) in names]
 
     def set_model(self, target: str, model: str) -> None:
-        self.store.set_setting(f"{target}_model", model)
+        # "plans" is one pick for both ephemeral passthroughs.
+        keys = ("planner", "injector") if target == "plans" else (target,)
+        for key in keys:
+            self.store.set_setting(f"{key}_model", model)
         log(logger, "model_set", target=target, model=model)
 
     def _passthrough_spec(

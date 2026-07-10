@@ -61,8 +61,10 @@ At runtime the model name carries the engine; three store
 settings shape what this box offers:
 
 - `engines` — which engines the phone's picker shows (`claude`, `codex`, or both)
-- `planner_model` / `injector_model` — who runs `+ Workstream` and `Send latest`
-  (default `opus` on Claude Code; `gpt-5.6-terra` is the Codex equivalent)
+- `planner_model` / `injector_model` — who runs `+ Workstream` and `Send latest`.
+  The phone's PLANS menu row sets both from one pick and offers exactly `opus`
+  (thinks at high) or `gpt-5.6-luna` (xhigh); seed one of those two so the row
+  shows the selection (default `opus`; `gpt-5.6-luna` is the Codex equivalent)
 
 Claude Code needs no wiring beyond login — the service hands its sessions the plugin
 directory at spawn. Wiring Codex is three symlinks (it discovers skills globally):
@@ -88,12 +90,12 @@ Apply by what's installed:
 - **Both CLIs:** ask the user whether to wire the second engine too, so both are
   pickable from the phone. Yes → the symlinks above and `engines` = `claude codex`;
   no → `engines` = the CLI you are running in. If you are running inside Codex, also
-  set `planner_model` and `injector_model` to `gpt-5.6-terra` — the engine that installs
+  set `planner_model` and `injector_model` to `gpt-5.6-luna` — the engine that installs
   drives the planning; the other stays pickable for conversation and workstreams.
 - **Claude Code only:** set `engines` = `claude`. Defaults cover the rest.
-- **Codex only:** the symlinks above, then `engines` = `codex`, `planner_model`,
-  `injector_model`, `convo_model`, and `workstream_model` = `gpt-5.6-terra` so the
-  first boot doesn't try to spawn a missing `claude` binary.
+- **Codex only:** the symlinks above, then `engines` = `codex`, `planner_model` and
+  `injector_model` = `gpt-5.6-luna`, `convo_model` and `workstream_model` =
+  `gpt-5.6-terra` so the first boot doesn't try to spawn a missing `claude` binary.
 
 All of it is an easy flip later — re-run this step after installing the other CLI.
 
