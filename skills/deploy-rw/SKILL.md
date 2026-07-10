@@ -110,6 +110,10 @@ All of it is an easy flip later — re-run this step after installing the other 
   tailnet. Wait for the user to say it's done, then re-run `check.sh`. The app's CLI
   lives at `/Applications/Tailscale.app/Contents/MacOS/Tailscale`; `check.sh` finds it.
 - `tailscale_state` must be `Running` — if not, have the user log in / toggle it on.
+- If the Tailscale app/kernel extension is unavailable, the repository includes an
+  unprivileged fallback: `scripts/install_tailscale_userspace.sh "$HOME"`. It keeps
+  `tailscaled` alive as a user LaunchAgent using the socket under
+  `~/.local/share/tailscale/`; authenticate with the normal `tailscale up` URL.
 - Note the `magicdns=` name (e.g. `mymac.tail1234.ts.net`). It is the service's public
   name inside the tailnet; you need it in Steps 7–8. If it's empty, MagicDNS is off —
   the user enables it in the Tailscale admin console under DNS.
