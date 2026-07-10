@@ -1,6 +1,6 @@
 # Deployment: Mac and iPhone
 
-1. Use a durable service checkout outside `~/Documents` (the current install uses `~/remote-workstreams-service`). macOS privacy controls can stall Python launch agents when their working tree is under Documents. Run `skills/deploy-rw/scripts/check.sh "$HOME/remote-workstreams-service"` and fix missing `uv`, `tmux`, an agent CLI, or Tailscale first.
+1. Use a durable service checkout outside `~/Documents` (the current install uses `~/remote-workstreams-service`). macOS privacy controls can stall Python launch agents when their working tree is under Documents. Run `skills/deploy-rw/scripts/check.sh "$HOME/remote-workstreams-service"` and fix missing `uv`, `tmux`, an agent CLI, or Tailscale first. If the Tailscale app is unavailable, install the user-space fallback with `skills/deploy-rw/scripts/install_tailscale_userspace.sh "$HOME"`.
 2. Install the local voice extra: `uv sync --extra local-voice`.
 3. Set `REMOTE_WORKSTREAMS_STT_PROVIDER=moonshine` and `REMOTE_WORKSTREAMS_TTS_PROVIDER=moonshine` in the launchd install environment. No Deepgram or Cartesia key is needed for this mode.
 4. Choose a four-digit pairing PIN and store its hash with `skills/deploy-rw/scripts/store_secret.sh pin-hash --hash "$PWD"`. Store cloud keys only if a cloud provider is selected.

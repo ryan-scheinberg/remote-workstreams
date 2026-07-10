@@ -25,14 +25,14 @@ Moonshine stack, so nothing needs to leave your Mac except the tailnet connectio
 
 ## Docs update tag
 
-Docs last updated: `docs-2026-07-10-2`
+Docs last updated: `docs-2026-07-10-3`
 
-Docs audited through commit: `b3a51c2`
+Docs audited through commit: `3dcd947`
 
 This tag marks the last commit where `README.md` + `docs/` were audited/updated.
 
-- View changes since docs were last updated: `git log docs-2026-07-10-2..HEAD --oneline`
-- Diff docs vs current: `git diff docs-2026-07-10-2..HEAD -- README.md docs/`
+- View changes since docs were last updated: `git log docs-2026-07-10-3..HEAD --oneline`
+- Diff docs vs current: `git diff docs-2026-07-10-3..HEAD -- README.md docs/`
 
 Update procedure: make the docs change in its own commit, update the audited commit above to the code revision being documented, then create an annotated `docs-YYYY-MM-DD` tag and push the commit and tag.
 
