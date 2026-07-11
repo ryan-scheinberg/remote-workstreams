@@ -7,9 +7,20 @@
 set -uo pipefail
 
 REPO="${1:-$HOME/remote-workstreams}"
-PORT="${REMOTE_WORKSTREAMS_PORT:-8400}"
-STT_PROVIDER="${REMOTE_WORKSTREAMS_STT_PROVIDER:-deepgram}"
-TTS_PROVIDER="${REMOTE_WORKSTREAMS_TTS_PROVIDER:-cartesia}"
+PLIST="$HOME/Library/LaunchAgents/com.remote-workstreams.server.plist"
+
+# A shell running this checker usually does not inherit the launchd service's
+# environment. Prefer an explicit override, then the installed plist, then the
+# application default so post-deploy checks report the service that is actually
+# running instead of falsely requiring cloud keys on a Moonshine install.
+plist_env() {
+  [ -f "$PLIST" ] || return 1
+  /usr/bin/plutil -extract "EnvironmentVariables.$1" raw -o - "$PLIST" 2>/dev/null
+}
+
+PORT="${REMOTE_WORKSTREAMS_PORT:-$(plist_env REMOTE_WORKSTREAMS_PORT || printf '8400')}"
+STT_PROVIDER="${REMOTE_WORKSTREAMS_STT_PROVIDER:-$(plist_env REMOTE_WORKSTREAMS_STT_PROVIDER || printf 'deepgram')}"
+TTS_PROVIDER="${REMOTE_WORKSTREAMS_TTS_PROVIDER:-$(plist_env REMOTE_WORKSTREAMS_TTS_PROVIDER || printf 'cartesia')}"
 echo "stt_provider=$STT_PROVIDER"
 echo "tts_provider=$TTS_PROVIDER"
 
@@ -128,11 +139,11 @@ if [ "$STT_PROVIDER" = moonshine ] || [ "$TTS_PROVIDER" = moonshine ]; then
   else
     echo "moonshine=missing"
   fi
-  echo "moonshine_model_dir=${REMOTE_WORKSTREAMS_MOONSHINE_MODEL_DIR:-$HOME/.remote-workstreams/models/moonshine}"
+  MODEL_DIR="${REMOTE_WORKSTREAMS_MOONSHINE_MODEL_DIR:-$(plist_env REMOTE_WORKSTREAMS_MOONSHINE_MODEL_DIR || printf '%s/.remote-workstreams/models/moonshine' "$HOME")}"
+  echo "moonshine_model_dir=$MODEL_DIR"
 fi
 
 # --- launchd service ---
-PLIST="$HOME/Library/LaunchAgents/com.remote-workstreams.server.plist"
 if [ -f "$PLIST" ]; then echo "plist=$PLIST"; else echo "plist=missing"; fi
 if launchctl print "gui/$(id -u)/com.remote-workstreams.server" >/dev/null 2>&1; then
   echo "service=loaded"
