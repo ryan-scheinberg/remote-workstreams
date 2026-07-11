@@ -90,7 +90,7 @@ async def test_spawn_full_options():
     assert session.spec is spec
 
     expected = (
-        f"command claude --session-id {session.session_id} --model fable --effort xhigh"
+        f"command claude --session-id {session.session_id} --model fable --effort max"
         " -n 'Wire the auth flow' --remote-control 'Wire the auth flow'"
         " --settings /tmp/ws-settings.json"
         " --plugin-dir /Users/alice/plugins/remote-workstreams"

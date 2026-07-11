@@ -158,7 +158,9 @@ class Substrate:
             "--model",
             spec.model,
             "--effort",
-            spec.effort,
+            # Role vocabulary uses xhigh for both engines. Claude Code names
+            # that same top effort tier "max"; Codex accepts xhigh directly.
+            "max" if spec.effort == "xhigh" else spec.effort,
             "-n",
             spec.display_name,
         ]

@@ -31,6 +31,7 @@ logger = logging.getLogger("remote_workstreams.server.workstreams")
 PLANNER_MODEL = "opus"
 INJECTOR_MODEL = "opus"
 WORKSTREAM_MODEL, WORKSTREAM_EFFORT = "fable", "xhigh"
+_PLAIN_READY_PROMPT = "Reply with exactly: Ready."
 
 
 def _plans_effort(model: str) -> str:
@@ -342,7 +343,7 @@ class WorkstreamManager:
                 effort=WORKSTREAM_EFFORT,
                 display_name=title,
                 engine="codex",
-                initial_prompt=f"${role_skill}" if role_skill else None,
+                initial_prompt=f"${role_skill}" if role_skill else _PLAIN_READY_PROMPT,
             )
         return SessionSpec(
             name=name,
@@ -350,7 +351,7 @@ class WorkstreamManager:
             effort=WORKSTREAM_EFFORT,
             display_name=title,
             settings_file=self._settings_file,
-            initial_prompt=f"/{role_skill}" if role_skill else None,
+            initial_prompt=f"/{role_skill}" if role_skill else _PLAIN_READY_PROMPT,
             remote_control=True,  # workstreams show up in the iOS Claude app too
         )
 
