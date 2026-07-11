@@ -69,6 +69,14 @@ class Tmux:
             await self._run(
                 "new-session", "-d", "-s", name, "-x", "220", "-y", "50", "-c", str(Path.home())
             )
+        # Claude Code's fullscreen renderer probes terminal capabilities and
+        # offers an interactive first-run picker. In a detached, headless tmux
+        # session those replies can land as literal prompt input, making remote
+        # send-keys/paste unable to submit. Keep the native scrollback renderer
+        # for every window, including when the tmux session already existed.
+        await self._run(
+            "set-environment", "-t", name, "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN", "1"
+        )
 
     async def new_window(self, session: str, name: str, cwd: Path) -> None:
         await self._run("new-window", "-t", session, "-n", name, "-c", str(cwd))

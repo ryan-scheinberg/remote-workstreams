@@ -291,9 +291,15 @@ async def test_ensure_session_creates_when_missing():
     new_session = tmux.runs[1][0]
     assert new_session[:8] == ("new-session", "-d", "-s", "voice", "-x", "220", "-y", "50")
     assert new_session[8] == "-c"
+    assert tmux.runs[2][0] == (
+        "set-environment", "-t", "voice", "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN", "1"
+    )
 
 
 async def test_ensure_session_noop_when_present():
     tmux = RecordingTmux(has_session_code=0)
     await tmux.ensure_session("voice")
-    assert [run[0][0] for run in tmux.runs] == ["has-session"]
+    assert [run[0] for run in tmux.runs] == [
+        ("has-session", "-t", "voice"),
+        ("set-environment", "-t", "voice", "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN", "1"),
+    ]
