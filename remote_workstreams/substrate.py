@@ -8,8 +8,13 @@ remote_workstreams.transcript. capture() exists only for the raw-terminal view.
 from __future__ import annotations
 
 import asyncio
+import fcntl
+import os
+import pty
 import re
 import shlex
+import struct
+import termios
 import time
 import uuid
 from dataclasses import dataclass
@@ -19,6 +24,26 @@ from pathlib import Path
 _CODEX_POLL_S = 0.5
 _CODEX_BOOT_BUDGET_S = 60.0
 _ROLLOUT_ID = re.compile(r"-([0-9a-f-]{36})\.jsonl$")
+
+# tmux enables the Kitty keyboard protocol on capable attached terminals.  Its
+# send-keys/paste-buffer commands bypass that client-side translation, which
+# makes recent Claude Code builds receive literal escape codes and ignore
+# Enter.  Keep one tiny, invisible terminal client per window and write through
+# it exactly as a real terminal would.
+_KITTY_ENTER = b"\x1b[13;1u"
+_CLIENT_ROWS = 50
+_CLIENT_COLS = 220
+_CLIENT_READY_S = 0.25
+_TERMINAL_RESPONSES = (
+    (b"\x1b[c", b"\x1b[?1;2c"),
+    (b"\x1b[>c", b"\x1b[>0;370;0c"),
+    (b"\x1b[>q", b"\x1bP>|XTerm(370)\x1b\\"),
+    (b"\x1b]10;?\x1b\\", b"\x1b]10;rgb:ffff/ffff/ffff\x1b\\"),
+    (b"\x1b]11;?\x1b\\", b"\x1b]11;rgb:0000/0000/0000\x1b\\"),
+    (b"\x1b[18t", b"\x1b[8;50;220t"),
+    (b"\x1b[14t", b"\x1b[4;1000;1760t"),
+    (b"\x1b[?2026$p", b"\x1b[?2026;2$y"),
+)
 
 
 def slug(path: Path | str) -> str:
@@ -48,8 +73,19 @@ class CCSession:
     spec: SessionSpec
 
 
+@dataclass
+class _TerminalClient:
+    process: asyncio.subprocess.Process
+    fd: int
+    waiter: asyncio.Task[None] | None = None
+    buffer: bytes = b""
+
+
 class Tmux:
     """Thin async wrapper over the tmux CLI."""
+
+    def __init__(self) -> None:
+        self._clients: dict[str, _TerminalClient] = {}
 
     async def _run(self, *args: str, stdin: bytes | None = None) -> tuple[int, str]:
         proc = await asyncio.create_subprocess_exec(
@@ -69,32 +105,101 @@ class Tmux:
             await self._run(
                 "new-session", "-d", "-s", name, "-x", "220", "-y", "50", "-c", str(Path.home())
             )
-        # Claude Code's fullscreen renderer probes terminal capabilities and
-        # offers an interactive first-run picker. In a detached, headless tmux
-        # session those replies can land as literal prompt input, making remote
-        # send-keys/paste unable to submit. Keep the native scrollback renderer
-        # for every window, including when the tmux session already existed.
-        await self._run(
-            "set-environment", "-t", name, "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN", "1"
-        )
+        # Let tmux consume focus events from the invisible terminal clients;
+        # otherwise a raw CSI I can land in Claude's composer on attach.
+        await self._run("set-option", "-g", "focus-events", "on")
 
     async def new_window(self, session: str, name: str, cwd: Path) -> None:
-        await self._run("new-window", "-t", session, "-n", name, "-c", str(cwd))
+        # -d keeps existing per-window terminal clients on their own windows.
+        await self._run("new-window", "-d", "-t", session, "-n", name, "-c", str(cwd))
+
+    async def _ensure_client(self, window: str) -> _TerminalClient:
+        current = self._clients.get(window)
+        if current is not None and current.process.returncode is None:
+            return current
+
+        master, slave = pty.openpty()
+        fcntl.ioctl(
+            slave,
+            termios.TIOCSWINSZ,
+            struct.pack("HHHH", _CLIENT_ROWS, _CLIENT_COLS, 0, 0),
+        )
+        env = os.environ.copy()
+        env["TERM"] = "xterm-256color"
+        try:
+            process = await asyncio.create_subprocess_exec(
+                "tmux",
+                "attach-session",
+                "-f",
+                "ignore-size",
+                "-t",
+                window,
+                stdin=slave,
+                stdout=slave,
+                stderr=slave,
+                env=env,
+            )
+        finally:
+            os.close(slave)
+
+        loop = asyncio.get_running_loop()
+        client = _TerminalClient(process=process, fd=master)
+        self._clients[window] = client
+        loop.add_reader(master, self._drain_client, window)
+        client.waiter = asyncio.create_task(self._reap_client(window, client))
+        await asyncio.sleep(_CLIENT_READY_S)
+        return client
+
+    def _drain_client(self, window: str) -> None:
+        client = self._clients.get(window)
+        if client is None:
+            return
+        try:
+            chunk = os.read(client.fd, 65536)
+        except OSError:
+            chunk = b""
+        if not chunk:
+            asyncio.get_running_loop().remove_reader(client.fd)
+            return
+        client.buffer = (client.buffer + chunk)[-4096:]
+        for query, response in _TERMINAL_RESPONSES:
+            if query not in client.buffer:
+                continue
+            try:
+                os.write(client.fd, response)
+            except OSError:
+                return
+            client.buffer = client.buffer.replace(query, b"", 1)
+
+    async def _reap_client(self, window: str, client: _TerminalClient) -> None:
+        await client.process.wait()
+        loop = asyncio.get_running_loop()
+        loop.remove_reader(client.fd)
+        try:
+            os.close(client.fd)
+        except OSError:
+            pass
+        if self._clients.get(window) is client:
+            self._clients.pop(window, None)
+
+    async def _write_client(self, window: str, data: bytes) -> None:
+        client = await self._ensure_client(window)
+        os.write(client.fd, data)
 
     async def send_line(self, window: str, text: str) -> None:
-        await self._run("send-keys", "-t", window, "-l", text)
-        await self._run("send-keys", "-t", window, "Enter")
+        await self._write_client(window, text.encode() + _KITTY_ENTER)
 
     async def paste(self, window: str, text: str) -> None:
-        """Multiline-safe inject: bracketed paste, then Enter as its own keystroke."""
-        await self._run("load-buffer", "-", stdin=text.encode())
-        await self._run("paste-buffer", "-p", "-d", "-t", window)
+        """Multiline-safe inject through a real tmux terminal client."""
+        await self._write_client(window, b"\x1b[200~" + text.encode() + b"\x1b[201~")
         # The TUI needs a beat to ingest the paste before Enter submits it.
         await asyncio.sleep(0.5)
-        await self._run("send-keys", "-t", window, "Enter")
+        await self._write_client(window, _KITTY_ENTER)
 
     async def send_key(self, window: str, key: str) -> None:
-        await self._run("send-keys", "-t", window, key)
+        if key != "Enter":
+            raise ValueError(f"unsupported terminal key: {key}")
+        await self._write_client(window, _KITTY_ENTER)
 
     async def type_line(self, window: str, text: str) -> None:
         # Slash commands must be TYPED, not pasted, so the TUI's command mode triggers.

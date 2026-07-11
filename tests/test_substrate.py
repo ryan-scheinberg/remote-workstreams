@@ -49,6 +49,7 @@ class RecordingTmux(Tmux):
     """Real Tmux with the subprocess layer replaced; has-session exit code scripted."""
 
     def __init__(self, has_session_code: int = 0) -> None:
+        super().__init__()
         self.runs: list[tuple] = []
         self.has_session_code = has_session_code
 
@@ -57,6 +58,9 @@ class RecordingTmux(Tmux):
         if args[0] == "has-session":
             return self.has_session_code, ""
         return 0, ""
+
+    async def _write_client(self, window: str, data: bytes) -> None:
+        self.runs.append((("client-write", window), data))
 
 
 def test_slug():
@@ -268,19 +272,28 @@ async def test_paste_sequence_order(monkeypatch):
     await tmux.paste("voice:convo", 'a\nb `x` "q" $HOME')
 
     assert tmux.runs == [
-        (("load-buffer", "-"), b'a\nb `x` "q" $HOME'),
-        (("paste-buffer", "-p", "-d", "-t", "voice:convo"), None),
+        (
+            ("client-write", "voice:convo"),
+            b'\x1b[200~a\nb `x` "q" $HOME\x1b[201~',
+        ),
         (("sleep", "0.5"), None),
-        (("send-keys", "-t", "voice:convo", "Enter"), None),
+        (("client-write", "voice:convo"), b"\x1b[13;1u"),
     ]
 
 
 async def test_type_line_sends_literal_keystrokes():
     tmux = RecordingTmux()
     await tmux.type_line("voice:convo", "/compact")
-    assert [run[0] for run in tmux.runs] == [
-        ("send-keys", "-t", "voice:convo", "-l", "/compact"),
-        ("send-keys", "-t", "voice:convo", "Enter"),
+    assert tmux.runs == [
+        (("client-write", "voice:convo"), b"/compact\x1b[13;1u"),
+    ]
+
+
+async def test_send_key_uses_kitty_enter():
+    tmux = RecordingTmux()
+    await tmux.send_key("voice:convo", "Enter")
+    assert tmux.runs == [
+        (("client-write", "voice:convo"), b"\x1b[13;1u"),
     ]
 
 
@@ -291,9 +304,7 @@ async def test_ensure_session_creates_when_missing():
     new_session = tmux.runs[1][0]
     assert new_session[:8] == ("new-session", "-d", "-s", "voice", "-x", "220", "-y", "50")
     assert new_session[8] == "-c"
-    assert tmux.runs[2][0] == (
-        "set-environment", "-t", "voice", "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN", "1"
-    )
+    assert tmux.runs[2][0] == ("set-option", "-g", "focus-events", "on")
 
 
 async def test_ensure_session_noop_when_present():
@@ -301,5 +312,13 @@ async def test_ensure_session_noop_when_present():
     await tmux.ensure_session("voice")
     assert [run[0] for run in tmux.runs] == [
         ("has-session", "-t", "voice"),
-        ("set-environment", "-t", "voice", "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN", "1"),
+        ("set-option", "-g", "focus-events", "on"),
+    ]
+
+
+async def test_new_window_does_not_move_existing_terminal_clients():
+    tmux = RecordingTmux()
+    await tmux.new_window("voice", "ws-auth", HOME)
+    assert tmux.runs == [
+        (("new-window", "-d", "-t", "voice", "-n", "ws-auth", "-c", str(HOME)), None)
     ]
