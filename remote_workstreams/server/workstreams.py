@@ -144,8 +144,8 @@ class WorkstreamManager:
             await self.substrate.kill(session)
             await self.notify(protocol.Error(message="workstream session failed to start"))
             return
-        await self.substrate.rename(session, title)
         await self.substrate.send(session, text)  # the full plan is the first message
+        await self.substrate.rename(session, title)  # cosmetic; never ahead of the plan
         self.store.add_workstream(
             name, session.session_id, session.window, title, str(output), model, engine
         )

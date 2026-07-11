@@ -222,6 +222,19 @@ async def test_slash_is_typed_not_pasted():
     assert not [call for call in fake.calls if call[0] == "paste"]
 
 
+async def test_slash_on_codex_is_pasted_not_typed():
+    """Codex 0.144.1 swallows a typed command's immediate Enter — verified live:
+    a typed /rename stranded in the composer and the next paste merged into it,
+    renaming ws-fix-chat-scrolling's session to its own plan text. Pasting the
+    command submits it reliably; Codex slash-parses the composer at submit."""
+    fake = FakeTmux()
+    sub = Substrate(fake, home=HOME)
+    session = CCSession("codex-id", "voice:convo", HOME / "rollout.jsonl", codex_spec())
+    await sub.slash(session, "/compact")
+    assert fake.calls[-1] == ("paste", "voice:convo", "/compact")
+    assert not [call for call in fake.calls if call[0] == "type_line"]
+
+
 async def test_slash_model_sends_a_sacrificial_enter():
     """CC 2.1.202 swallows the first input submitted after /model — verified live:
     a voice turn pasted 9s after /model never reached the session. The blank
@@ -236,7 +249,7 @@ async def test_slash_model_sends_a_sacrificial_enter():
     ]
 
 
-async def test_rename_types_codex_slash_command():
+async def test_rename_pastes_codex_slash_command():
     fake = FakeTmux()
     sub = Substrate(fake, home=HOME)
     spec = codex_spec()
@@ -244,7 +257,7 @@ async def test_rename_types_codex_slash_command():
 
     await sub.rename(session, "Wire the auth flow")
 
-    assert fake.calls[-1] == ("type_line", "voice:convo", "/rename Wire the auth flow")
+    assert fake.calls[-1] == ("paste", "voice:convo", "/rename Wire the auth flow")
 
 
 async def test_alive_and_kill():

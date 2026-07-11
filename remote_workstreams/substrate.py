@@ -224,6 +224,12 @@ class Substrate:
         await self._tmux.paste(session.window, text)
 
     async def slash(self, session: CCSession, command: str) -> None:
+        if session.spec.engine == "codex":
+            # Codex 0.144.1 swallows a typed command's immediate Enter (the
+            # command strands in the composer); it parses a leading "/" at
+            # submit, so the paste path's delayed Enter delivers it reliably.
+            await self._tmux.paste(session.window, command)
+            return
         await self._tmux.type_line(session.window, command)
         if command.startswith("/model"):
             # CC 2.1.202 silently swallows the FIRST input submitted after /model

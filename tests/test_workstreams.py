@@ -369,9 +369,11 @@ async def test_codex_pick_launches_a_codex_workstream(rig):
     assert (spec.engine, spec.model, spec.effort) == ("codex", "gpt-5.6-luna", "xhigh")
     assert spec.initial_prompt == "$role-root"  # codex skill invocation
     assert spec.settings_file is None  # the approval relay hook is claude-only
+    # Plan before rename: delivering the work must never trail the cosmetic
+    # rename — a stranded rename ate ws-fix-chat-scrolling's plan (2026-07-11).
     assert substrate.sent[-2:] == [
-        (session.window, "/rename Wire the auth flow"),
         (session.window, PLAN_TEXT),
+        (session.window, "/rename Wire the auth flow"),
     ]
 
     (row,) = store.list_workstreams()
