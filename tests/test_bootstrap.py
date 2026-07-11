@@ -33,6 +33,8 @@ async def test_fresh_spawn_mints_id_and_stores_it(rig):
 async def test_alive_window_is_reused_without_spawning(rig):
     store, substrate = rig
     store.set_convo_session("cc-stored", "claude")
+    substrate.transcript_dir.mkdir(parents=True)
+    (substrate.transcript_dir / "cc-stored.jsonl").write_text("{}\n")
     substrate.alive_windows.add("voice:convo")
     session = await ensure_convo(store, substrate, PLUGIN_DIR)
     assert substrate.spawned == []
@@ -45,6 +47,8 @@ async def test_alive_window_is_reused_without_spawning(rig):
 async def test_dead_window_respawns_with_resume(rig):
     store, substrate = rig
     store.set_convo_session("cc-stored", "claude")  # remembered, but no window alive
+    substrate.transcript_dir.mkdir(parents=True)
+    (substrate.transcript_dir / "cc-stored.jsonl").write_text("{}\n")
     session = await ensure_convo(store, substrate, PLUGIN_DIR)
     (spawned,) = substrate.spawned
     assert spawned is session
@@ -52,6 +56,20 @@ async def test_dead_window_respawns_with_resume(rig):
     assert session.spec.resume is True
     assert session.spec.initial_prompt is None  # the role is already in its history
     assert store.get_convo_session().cc_session_id == "cc-stored"
+
+
+async def test_stored_id_without_transcript_replaces_stale_window(rig):
+    store, substrate = rig
+    store.set_convo_session("never-booted", "claude")
+    substrate.alive_windows.add("voice:convo")
+
+    session = await ensure_convo(store, substrate, PLUGIN_DIR)
+
+    assert substrate.killed == ["voice:convo"]
+    assert session.session_id != "never-booted"
+    assert session.spec.resume is False
+    assert session.spec.initial_prompt == "/remote-workstreams:role-convo"
+    assert store.get_convo_session().cc_session_id == session.session_id
 
 
 async def test_fresh_convo_replaces_the_live_session(rig):

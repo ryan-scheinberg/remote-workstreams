@@ -60,6 +60,14 @@ async def ensure_convo(store: Store, substrate: Substrate, plugin_dir: Path) -> 
         transcript=substrate.transcript_dir / f"{stored.cc_session_id}.jsonl",
         spec=_spec(plugin_dir),
     )
+    # Claude writes the transcript only after its TUI has actually booted. A
+    # first-run trust screen can leave both a stored id and a tmux window while
+    # no resumable conversation exists. Reusing that window (or passing the id
+    # to --resume) strands the service in a dead shell forever.
+    if not existing.transcript.exists():
+        if await substrate.alive(existing):
+            await substrate.kill(existing)
+        return await _spawn_fresh(store, substrate, plugin_dir)
     if await substrate.alive(existing):
         return existing
     return await substrate.spawn(
