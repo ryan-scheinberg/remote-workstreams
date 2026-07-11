@@ -222,8 +222,19 @@ button {
 
 /* ---------- chat ---------- */
 
+/* Each chat panel sits in a wrapper so the jump button can float over its
+   bottom edge without living among the messages. min-width: 0 keeps a long
+   unbroken word (transcript paths) from widening the track past the viewport. */
+#chat-wrap, #ws-log-wrap {
+  position: relative;
+  display: grid; /* the panel fills the row the wrapper took over */
+  min-height: 0;
+  min-width: 0;
+}
+
 #chat, #ws-log {
   min-height: 0;
+  min-width: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
@@ -231,6 +242,27 @@ button {
   mask-image: linear-gradient(to bottom, transparent, black 26px);
   -webkit-mask-image: linear-gradient(to bottom, transparent, black 26px);
 }
+
+.jump-latest {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--elev-2);
+  color: var(--dim);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  z-index: 5;
+}
+.jump-latest[hidden] { display: none; }
+.jump-latest:active { color: var(--text); }
+.jump-latest:focus-visible { outline: 2px solid var(--user); outline-offset: 2px; }
+.jump-latest svg { width: 18px; height: 18px; }
 
 #chat-empty, #ws-log-empty {
   margin-top: 22px;
@@ -244,6 +276,7 @@ button {
 .turn {
   max-width: 92%;
   margin: 0 0 14px;
+  overflow-wrap: anywhere; /* transcript paths et al must wrap, not widen the page */
   animation: rise 0.35s cubic-bezier(0.2, 0.9, 0.3, 1);
   user-select: text;
   -webkit-user-select: text;
@@ -735,7 +768,7 @@ button {
 #btn-ws-back:active { color: var(--text); background: var(--elev); }
 #btn-ws-back svg { width: 19px; height: 19px; }
 
-#ws-log { flex: 1; } /* the log takes everything between the header and the composer */
+#ws-log-wrap { flex: 1; } /* the log takes everything between the header and the composer */
 
 /* Compact sits where the mics do on the main composer; idle it reads the
    context %, armed it turns amber via .ws-compact.armed. */

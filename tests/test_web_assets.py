@@ -64,6 +64,13 @@ def test_worklet_loaded_by_name():
     assert "audio-worklet.js" in _js(), "no JS loads audio-worklet.js"
 
 
+def test_every_ui_element_id_exists_in_index():
+    ids = set(re.findall(r'\$\("([\w-]+)"\)', (WEB / "ui.js").read_text()))
+    html = (WEB / "index.html").read_text()
+    missing = [i for i in sorted(ids) if f'id="{i}"' not in html]
+    assert not missing, f"ui.js looks up ids missing from index.html: {missing}"
+
+
 def test_every_protocol_literal_appears_in_js():
     js = _js()
     for literal in CLIENT_TYPES | SERVER_TYPES | PIPELINE_STATES:

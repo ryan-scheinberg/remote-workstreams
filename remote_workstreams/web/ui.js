@@ -13,6 +13,7 @@ const els = {
   lockBtn: $("btn-lock"),
   chat: $("chat"),
   chatEmpty: $("chat-empty"),
+  chatJump: $("chat-jump"),
   approvals: $("approvals"),
   workstreams: $("workstreams"),
   wsDots: $("ws-dots"),
@@ -34,6 +35,7 @@ const els = {
   wsDetailCompact: $("ws-detail-compact"),
   wsLog: $("ws-log"),
   wsLogEmpty: $("ws-log-empty"),
+  wsJump: $("ws-jump"),
   wsInput: $("ws-input"),
   wsComposerSend: $("ws-composer-send"),
   wsKeyboard: $("ws-keyboard"),
@@ -144,6 +146,8 @@ export function init(h) {
     if (els.menu.hidden || els.menu.contains(e.target) || els.menuBtn.contains(e.target)) return;
     closeMenu();
   });
+  updateChatJump = attachJump(els.chat, els.chatJump);
+  updateWsJump = attachJump(els.wsLog, els.wsJump);
   // Locking must be instant — no confirm tap.
   els.lockBtn.addEventListener("click", () => handlers.onLock());
 }
@@ -266,6 +270,31 @@ function keepPinned(el, wasPinned) {
   if (wasPinned) el.scrollTop = el.scrollHeight;
 }
 
+// ---- jump to latest: floats over a chat panel while it's scrolled up ----
+
+// Well past the pinned zone, so the button never flickers at its boundary.
+const JUMP_AWAY = 160;
+
+// Scroll and panel resizes update the button; content growth can't be
+// observed, so the append/clear paths below call the returned update too.
+function attachJump(panel, btn) {
+  const update = () => {
+    btn.hidden = panel.scrollHeight - panel.scrollTop - panel.clientHeight < JUMP_AWAY;
+  };
+  panel.addEventListener("scroll", update, { passive: true });
+  new ResizeObserver(update).observe(panel);
+  btn.addEventListener("click", () => {
+    panel.scrollTo({
+      top: panel.scrollHeight,
+      behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    });
+  });
+  return update;
+}
+
+let updateChatJump = () => {};
+let updateWsJump = () => {};
+
 export function addChat(role, text, final) {
   els.chatEmpty.hidden = true;
   const wasPinned = pinned(els.chat);
@@ -275,6 +304,7 @@ export function addChat(role, text, final) {
     el.textContent = text;
     els.chat.append(el);
     keepPinned(els.chat, wasPinned);
+    updateChatJump();
     return;
   }
   let el = pending[role];
@@ -294,12 +324,14 @@ export function addChat(role, text, final) {
     if (!final) pending[role] = el;
   }
   keepPinned(els.chat, wasPinned);
+  updateChatJump();
 }
 
 export function clearChat() {
   els.chat.replaceChildren(els.chatEmpty);
   els.chatEmpty.hidden = false;
   pending.user = pending.assistant = null;
+  updateChatJump();
 }
 
 // ---- composer ----
@@ -391,6 +423,7 @@ function renderDetailHead(ws) {
 function logReset() {
   els.wsLog.replaceChildren(els.wsLogEmpty);
   els.wsLogEmpty.hidden = false;
+  updateWsJump();
 }
 
 function logAppend(entries) {
@@ -405,6 +438,7 @@ function logAppend(entries) {
   }
   while (els.wsLog.children.length - 1 > MAX_LOG) els.wsLog.children[1].remove();
   keepPinned(els.wsLog, wasPinned);
+  updateWsJump();
 }
 
 function openDetail(name) {

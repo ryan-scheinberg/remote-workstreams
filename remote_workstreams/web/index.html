@@ -70,9 +70,14 @@
     </div>
   </div>
 
-  <section id="chat" aria-live="polite">
-    <p id="chat-empty">Say something. The conversation lands here.</p>
-  </section>
+  <div id="chat-wrap">
+    <section id="chat" aria-live="polite">
+      <p id="chat-empty">Say something. The conversation lands here.</p>
+    </section>
+    <button id="chat-jump" class="jump-latest" type="button" hidden aria-label="Jump to latest message">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v13M6.5 12.5 12 18l5.5-5.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </div>
 
   <div id="approvals" aria-live="assertive"></div>
 
@@ -136,9 +141,14 @@
       <span id="ws-detail-agents" class="ws-agents" hidden></span>
       <button id="ws-detail-end" class="ws-end" type="button" aria-label="End workstream">✕</button>
     </header>
-    <section id="ws-log" aria-live="polite">
-      <p id="ws-log-empty">The workstream's transcript lands here.</p>
-    </section>
+    <div id="ws-log-wrap">
+      <section id="ws-log" aria-live="polite">
+        <p id="ws-log-empty">The workstream's transcript lands here.</p>
+      </section>
+      <button id="ws-jump" class="jump-latest" type="button" hidden aria-label="Jump to latest message">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v13M6.5 12.5 12 18l5.5-5.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
     <!-- Mirrors the main composer: Compact (doubling as the context meter)
          where the mics sit, then the keyboard pill that unfolds into the
          input. Send latest and Check in stay hub verbs — the log below IS
