@@ -9,4 +9,8 @@
 7. Open the MagicDNS HTTPS URL on the iPhone while Tailscale is connected. Add it to the Home Screen, tap Pair, enter the PIN, and approve Face ID to create the WebAuthn passkey.
 8. Finish with `uv run python -m remote_workstreams.audio.roundtrip` and a final `check.sh`.
 
+After a service restart, reopen or force-close/reopen the Home Screen app and tap **Unlock with Face ID**. Session tokens live only in server memory, so restart invalidation is expected. The four-digit PIN is only for first-time pairing or pairing a new device.
+
+The service creates an invisible terminal client for each agent window it drives. Seeing an attached `xterm-256color` client in `tmux list-clients` is expected and required; it is not another browser/device connection.
+
 If a command needs a macOS authorization, Keychain write, launchd change, Tailscale login, or Face ID confirmation, stop and let the operator perform that prompt. The scripts are idempotent; re-running them is the repair path.

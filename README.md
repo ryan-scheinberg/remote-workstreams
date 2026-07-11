@@ -25,14 +25,14 @@ Moonshine stack, so nothing needs to leave your Mac except the tailnet connectio
 
 ## Docs update tag
 
-Docs last updated: `docs-2026-07-10-5`
+Docs last updated: `docs-2026-07-10-6`
 
-Docs audited through commit: `e1ca0fc`
+Docs audited through commit: `75506a7`
 
 This tag marks the last commit where `README.md` + `docs/` were audited/updated.
 
-- View changes since docs were last updated: `git log docs-2026-07-10-5..HEAD --oneline`
-- Diff docs vs current: `git diff docs-2026-07-10-5..HEAD -- README.md docs/`
+- View changes since docs were last updated: `git log docs-2026-07-10-6..HEAD --oneline`
+- Diff docs vs current: `git diff docs-2026-07-10-6..HEAD -- README.md docs/`
 
 Update procedure: make the docs change in its own commit, update the audited commit above to the code revision being documented, then create an annotated `docs-YYYY-MM-DD` tag and push the commit and tag.
 
@@ -214,7 +214,7 @@ uvx ruff check .   # lint
 
 | Path | What it is |
 |---|---|
-| `remote_workstreams/substrate.py` | tmux substrate — spawn/inject/kill Claude Code and Codex sessions as windows |
+| `remote_workstreams/substrate.py` | tmux substrate — spawn/inject/kill agent windows; invisible terminal clients preserve real TUI input semantics |
 | `remote_workstreams/transcript.py` | Claude Code transcript JSONL parsing (the only CC-format-aware module) |
 | `remote_workstreams/rollout.py` | Codex rollout JSONL parsing (the only Codex-format-aware module) |
 | `remote_workstreams/engines.py` | model ↔ engine registry — which models run on which CLI |

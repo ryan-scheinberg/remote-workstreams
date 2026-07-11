@@ -4,9 +4,12 @@
 
 Key records are:
 
-- `settings`: engine/provider and planner/injector choices.
-- `sessions`: the persistent conversation and workstream session identifiers, engine, tmux window, and transcript markers.
-- `workstreams`: titles, launch state, engine/model, and the transcript path used for live cards.
+- `settings`: conversation, workstream, planner, injector, enabled-engine, and optional role-skill choices.
+- `convo`: the single persistent conversation session ID and engine.
+- `marker`: the conversation JSONL line number last consumed by the planner/injector flow.
+- `workstreams`: session ID, tmux window, title, plan path, created time, status, model, and engine for every live or recoverable card.
 - `credentials`: WebAuthn credential IDs and public-key metadata. Private passkeys remain on the phone.
 
 JSONL transcript files are deliberately outside SQLite. They are append-only provider/session artifacts and remain the source of truth for chat, tool activity, and workstream logs; SQLite stores pointers and control metadata so a service restart can rediscover them.
+
+The service drops the legacy `sessions` and `transcript` tables at store startup. Conversation content is never copied into SQLite.
