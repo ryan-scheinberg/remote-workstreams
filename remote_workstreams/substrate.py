@@ -185,14 +185,14 @@ class Substrate:
             spec.model,
             "--config",
             f'model_reasoning_effort="{spec.effort}"',
-            # No phone-approval relay exists for codex; run autonomously inside
-            # the write sandbox instead of stalling on unanswerable prompts.
+            # No phone-approval relay exists for codex. Workstreams are trusted
+            # sessions and must not stall on local approval prompts.
             "--sandbox",
-            "workspace-write",
+            "danger-full-access",
             "--ask-for-approval",
             "never",
             "--config",
-            "sandbox_workspace_write.network_access=true",
+            "features.multi_agent_v2.hide_spawn_agent_metadata=false",
         ]
         if spec.initial_prompt is not None:
             argv.append(spec.initial_prompt)

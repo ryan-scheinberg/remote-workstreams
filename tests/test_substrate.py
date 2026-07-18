@@ -169,8 +169,9 @@ async def test_spawn_codex_discovers_the_rollout_file(tmp_path, monkeypatch):
     expected = (
         "command /Applications/ChatGPT.app/Contents/Resources/codex --model gpt-5.6-sol"
         " --config 'model_reasoning_effort=\"low\"'"
-        " --sandbox workspace-write --ask-for-approval never"
-        " --config sandbox_workspace_write.network_access=true '$role-convo'"
+        " --sandbox danger-full-access --ask-for-approval never"
+        " --config features.multi_agent_v2.hide_spawn_agent_metadata=false"
+        " '$role-convo'"
     )
     assert fake.calls == [
         ("ensure_session", "voice"),

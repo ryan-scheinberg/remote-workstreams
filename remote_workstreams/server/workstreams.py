@@ -335,7 +335,7 @@ class WorkstreamManager:
         role_skill = self._role_skill()
         if engines.engine_of(model) == "codex":
             # No settings file: the phone-approval relay is a Claude Code hook;
-            # codex workstreams run sandboxed instead (see substrate).
+            # codex permissions are set directly by the substrate.
             return SessionSpec(
                 name=name,
                 model=model,

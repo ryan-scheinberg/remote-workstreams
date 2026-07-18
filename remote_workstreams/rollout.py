@@ -69,8 +69,9 @@ class RolloutVitals:
     """Codex session health for the phone's cards — the rollout counterpart of
     transcript.SessionVitals, same surface. task_started/task_complete bound the
     turn, token_count carries the fill and the model's context window, and error
-    events flag until the next turn starts. Codex subagents aren't surfaced in
-    the rollout, so active_agents is always 0.
+    events flag until the next turn starts. Child sessions identify their parent
+    in session_meta, so their own task lifecycle supplies active_agents for both
+    Codex multi-agent versions.
     """
 
     def __init__(self, path: Path) -> None:
@@ -80,6 +81,8 @@ class RolloutVitals:
         self._error = False
         self._context_tokens: int | None = None
         self._window: int | None = None
+        self._child_offsets: dict[Path, int] = {}
+        self._child_active: dict[Path, bool] = {}
 
     @property
     def state(self) -> VitalsState:
@@ -89,7 +92,7 @@ class RolloutVitals:
 
     @property
     def active_agents(self) -> int:
-        return 0
+        return sum(self._child_active.values())
 
     @property
     def context_pct(self) -> int | None:
@@ -101,6 +104,66 @@ class RolloutVitals:
         lines, self._offset = read_complete_lines(self.path, self._offset)
         for raw in lines:
             self._scan(raw)
+        self._refresh_children()
+
+    def _refresh_children(self) -> None:
+        parent_id = self._session_id()
+        if parent_id is None:
+            return
+        current: set[Path] = set()
+        for child in self.path.parent.glob("rollout-*.jsonl"):
+            if child == self.path:
+                continue
+            if child not in self._child_offsets:
+                if self._parent_id(child) != parent_id:
+                    continue
+                self._child_offsets[child] = 0
+                self._child_active[child] = False
+            current.add(child)
+            lines, offset = read_complete_lines(child, self._child_offsets[child])
+            self._child_offsets[child] = offset
+            for raw in lines:
+                self._scan_child(raw, child)
+        for child in set(self._child_offsets) - current:
+            self._child_offsets.pop(child, None)
+            self._child_active.pop(child, None)
+
+    def _session_id(self) -> str | None:
+        try:
+            with self.path.open() as f:
+                line = json.loads(f.readline())
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            return None
+        payload = line.get("payload") if isinstance(line, dict) else None
+        session_id = payload.get("id") if isinstance(payload, dict) else None
+        return session_id if isinstance(session_id, str) else None
+
+    @staticmethod
+    def _parent_id(path: Path) -> str | None:
+        try:
+            with path.open() as f:
+                line = json.loads(f.readline())
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            return None
+        payload = line.get("payload") if isinstance(line, dict) else None
+        parent_id = payload.get("parent_thread_id") if isinstance(payload, dict) else None
+        return parent_id if isinstance(parent_id, str) else None
+
+    def _scan_child(self, raw: str, path: Path) -> None:
+        try:
+            line = json.loads(raw)
+        except json.JSONDecodeError:
+            return
+        if not isinstance(line, dict) or line.get("type") != "event_msg":
+            return
+        payload = line.get("payload")
+        if not isinstance(payload, dict):
+            return
+        kind = payload.get("type")
+        if kind == "task_started":
+            self._child_active[path] = True
+        elif kind in ("task_complete", "turn_aborted"):
+            self._child_active[path] = False
 
     def _scan(self, raw: str) -> None:
         try:

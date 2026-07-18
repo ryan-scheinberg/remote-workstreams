@@ -73,12 +73,11 @@ title in ChatGPT as they launch and archived when you tap End. The planner and i
 (store-configurable), so a single-engine box is fully functional either way.
 
 Engine differences that show: Codex has no known-in-advance session id, so the
-service discovers each session's rollout file on disk; Codex workstreams run inside
-Codex's own `workspace-write` sandbox with approval prompts disabled instead of the
-phone-approval relay (which is a Claude Code hook); and Codex sessions don't resume
-across service restarts — a dead Codex conversation window starts fresh. Codex
-support is new plumbing, built against the documented CLI and real session files —
-treat it as beta until it has miles on it.
+service discovers each session's rollout file on disk; Codex workstreams run with
+full filesystem access and approval prompts disabled because the phone-approval
+relay is a Claude Code hook; and Codex sessions don't resume across service restarts
+— a dead Codex conversation window starts fresh. Sol and Terra use Codex's V2
+multi-agent runtime.
 
 The launchd service runs `codex` from its Homebrew-aware PATH. Codex conversations
 also appear in the ChatGPT app's history, so a live workstream can be opened there

@@ -109,6 +109,45 @@ def test_vitals_error_flags_until_the_next_turn(tmp_path):
     assert vitals.state == "thinking"
 
 
+def test_vitals_counts_v1_and_v2_children_from_their_rollouts(tmp_path):
+    parent = tmp_path / "rollout-parent.jsonl"
+    child_one = tmp_path / "rollout-child-one.jsonl"
+    child_two = tmp_path / "rollout-child-two.jsonl"
+    unrelated = tmp_path / "rollout-unrelated.jsonl"
+    parent.write_text(json.dumps({"type": "session_meta", "payload": {"id": "parent"}}) + "\n")
+
+    def child(path, child_id, parent_id, version, *events):
+        meta = {
+            "type": "session_meta",
+            "payload": {
+                "id": child_id,
+                "parent_thread_id": parent_id,
+                "multi_agent_version": version,
+            },
+        }
+        write_lines(path, json.dumps(meta), *events)
+
+    started_one = line("event_msg", type="task_started", turn_id="one")
+    started_two = line("event_msg", type="task_started", turn_id="two")
+    child(child_one, "one", "parent", "v1", started_one)
+    child(child_two, "two", "parent", "v2", started_two)
+    child(unrelated, "other", "someone-else", "v2", started_one)
+
+    vitals = RolloutVitals(parent)
+    vitals.refresh()
+    assert vitals.active_agents == 2
+
+    with child_one.open("a") as f:
+        f.write(line("event_msg", type="task_complete", turn_id="one") + "\n")
+    vitals.refresh()
+    assert vitals.active_agents == 1
+
+    with child_two.open("a") as f:
+        f.write(line("event_msg", type="task_complete", turn_id="two") + "\n")
+    vitals.refresh()
+    assert vitals.active_agents == 0
+
+
 def test_vitals_waits_out_a_partial_last_line(tmp_path):
     rollout = tmp_path / "rollout.jsonl"
     complete = line("event_msg", type="task_started", turn_id="t1", model_context_window=100)
