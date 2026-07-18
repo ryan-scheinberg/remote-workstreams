@@ -1,25 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Rendered by the deploy plugin: __UV__ = absolute path to uv,
-     __REPO__ = absolute path to the remote-workstreams checkout, __HOME__ = user home,
+<!-- Rendered by the deploy plugin: __PYTHON__ = base Python executable,
+     __PYTHONPATH__ = the synced venv's site-packages,
+     __REPO__ = absolute path to the remote-workstreams checkout,
+     __HOME__ = user home,
      __PORT__ = service port (must match what install_service.sh health-checks),
-     __CODEX_COMMAND__ = the Codex executable the service launches. -->
+     __CODEX_COMMAND__ = the Codex executable the service launches,
+     __STT_PROVIDER__/__TTS_PROVIDER__ = voice providers. -->
 <plist version="1.0">
 <dict>
     <key>Label</key>
     <string>com.remote-workstreams.server</string>
     <key>ProgramArguments</key>
     <array>
-        <string>__UV__</string>
-        <string>run</string>
-        <string>--project</string>
-        <string>__REPO__</string>
-        <string>python</string>
+        <string>__PYTHON__</string>
+        <string>-S</string>
         <string>-m</string>
         <string>remote_workstreams.server</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>__REPO__</string>
+    <string>__HOME__</string>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
@@ -32,13 +32,31 @@
     <dict>
         <key>HOME</key>
         <string>__HOME__</string>
+        <key>PYTHONPATH</key>
+        <string>__PYTHONPATH__</string>
         <key>REMOTE_WORKSTREAMS_PORT</key>
         <string>__PORT__</string>
         <key>REMOTE_WORKSTREAMS_CODEX_COMMAND</key>
         <string>__CODEX_COMMAND__</string>
+        <key>REMOTE_WORKSTREAMS_STT_PROVIDER</key>
+        <string>__STT_PROVIDER__</string>
+        <key>REMOTE_WORKSTREAMS_TTS_PROVIDER</key>
+        <string>__TTS_PROVIDER__</string>
+        <key>REMOTE_WORKSTREAMS_MOONSHINE_LANGUAGE</key>
+        <string>__MOONSHINE_LANGUAGE__</string>
+        <key>REMOTE_WORKSTREAMS_MOONSHINE_STT_MODEL</key>
+        <string>__MOONSHINE_STT_MODEL__</string>
+        <key>REMOTE_WORKSTREAMS_MOONSHINE_TTS_LOCALE</key>
+        <string>__MOONSHINE_TTS_LOCALE__</string>
+        <key>REMOTE_WORKSTREAMS_MOONSHINE_TTS_VOICE</key>
+        <string>__MOONSHINE_TTS_VOICE__</string>
+        <key>REMOTE_WORKSTREAMS_MOONSHINE_TTS_SPEED</key>
+        <string>__MOONSHINE_TTS_SPEED__</string>
+        <key>REMOTE_WORKSTREAMS_MOONSHINE_MODEL_DIR</key>
+        <string>__MOONSHINE_MODEL_DIR__</string>
         <!-- launchd's default PATH misses Homebrew; the service spawns tmux by name. -->
         <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <string>__HOME__/.local/bin:__HOME__/.npm-global/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     </dict>
 </dict>
 </plist>

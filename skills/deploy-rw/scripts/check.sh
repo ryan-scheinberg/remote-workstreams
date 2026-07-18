@@ -7,7 +7,22 @@
 set -uo pipefail
 
 REPO="${1:-$HOME/remote-workstreams}"
-PORT="${REMOTE_WORKSTREAMS_PORT:-8400}"
+PLIST="$HOME/Library/LaunchAgents/com.remote-workstreams.server.plist"
+
+# A shell running this checker usually does not inherit the launchd service's
+# environment. Prefer an explicit override, then the installed plist, then the
+# application default so post-deploy checks report the service that is actually
+# running instead of falsely requiring cloud keys on a Moonshine install.
+plist_env() {
+  [ -f "$PLIST" ] || return 1
+  /usr/bin/plutil -extract "EnvironmentVariables.$1" raw -o - "$PLIST" 2>/dev/null
+}
+
+PORT="${REMOTE_WORKSTREAMS_PORT:-$(plist_env REMOTE_WORKSTREAMS_PORT || printf '8400')}"
+STT_PROVIDER="${REMOTE_WORKSTREAMS_STT_PROVIDER:-$(plist_env REMOTE_WORKSTREAMS_STT_PROVIDER || printf 'deepgram')}"
+TTS_PROVIDER="${REMOTE_WORKSTREAMS_TTS_PROVIDER:-$(plist_env REMOTE_WORKSTREAMS_TTS_PROVIDER || printf 'cartesia')}"
+echo "stt_provider=$STT_PROVIDER"
+echo "tts_provider=$TTS_PROVIDER"
 
 # --- OS ---
 if [ "$(uname -s)" = "Darwin" ]; then
@@ -82,7 +97,13 @@ if [ -z "$TS" ]; then
   echo "tailscale=missing"
 else
   echo "tailscale=$TS"
-  status_json="$("$TS" status --json 2>/dev/null)" || status_json=""
+  TS_SOCKET="${REMOTE_WORKSTREAMS_TAILSCALE_SOCKET:-}"
+  if [ -z "$TS_SOCKET" ] && [ -S "$HOME/.local/share/tailscale/tailscaled.sock" ]; then
+    TS_SOCKET="$HOME/.local/share/tailscale/tailscaled.sock"
+  fi
+  TS_ARGS=()
+  [ -n "$TS_SOCKET" ] && TS_ARGS+=("--socket=$TS_SOCKET")
+  status_json="$("$TS" "${TS_ARGS[@]}" status --json 2>/dev/null)" || status_json=""
   if [ -n "$status_json" ]; then
     # First DNSName in the pretty-printed JSON belongs to the Self block.
     backend="$(printf '%s\n' "$status_json" | sed -n 's/.*"BackendState": *"\([^"]*\)".*/\1/p' | head -1)"
@@ -92,7 +113,7 @@ else
   else
     echo "tailscale_state=down"
   fi
-  if "$TS" serve status 2>/dev/null | grep -q "127.0.0.1:$PORT"; then
+  if "$TS" "${TS_ARGS[@]}" serve status 2>/dev/null | grep -q "127.0.0.1:$PORT"; then
     echo "serve=configured"
   else
     echo "serve=not-configured"
@@ -101,15 +122,28 @@ fi
 
 # --- Keychain secrets (presence only; values are never printed) ---
 for name in deepgram-api-key cartesia-api-key pin-hash; do
+  required=1
+  [ "$name" = deepgram-api-key ] && [ "$STT_PROVIDER" = moonshine ] && required=0
+  [ "$name" = cartesia-api-key ] && [ "$TTS_PROVIDER" = moonshine ] && required=0
   if security find-generic-password -s remote-workstreams -a "$name" >/dev/null 2>&1; then
     echo "secret_${name}=present"
-  else
+  elif [ "$required" -eq 1 ]; then
     echo "secret_${name}=missing"
+  else
+    echo "secret_${name}=not-required"
   fi
 done
+if [ "$STT_PROVIDER" = moonshine ] || [ "$TTS_PROVIDER" = moonshine ]; then
+  if [ -x "$REPO/.venv/bin/python" ] && "$REPO/.venv/bin/python" -c 'import importlib.util,sys; sys.exit(0 if importlib.util.find_spec("moonshine_voice") else 1)' 2>/dev/null; then
+    echo "moonshine=installed"
+  else
+    echo "moonshine=missing"
+  fi
+  MODEL_DIR="${REMOTE_WORKSTREAMS_MOONSHINE_MODEL_DIR:-$(plist_env REMOTE_WORKSTREAMS_MOONSHINE_MODEL_DIR || printf '%s/.remote-workstreams/models/moonshine' "$HOME")}"
+  echo "moonshine_model_dir=$MODEL_DIR"
+fi
 
 # --- launchd service ---
-PLIST="$HOME/Library/LaunchAgents/com.remote-workstreams.server.plist"
 if [ -f "$PLIST" ]; then echo "plist=$PLIST"; else echo "plist=missing"; fi
 if launchctl print "gui/$(id -u)/com.remote-workstreams.server" >/dev/null 2>&1; then
   echo "service=loaded"

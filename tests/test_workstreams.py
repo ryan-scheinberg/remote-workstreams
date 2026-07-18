@@ -387,11 +387,11 @@ async def test_missing_role_skill_boots_workstreams_plain(rig):
     manager, store, substrate, notify, tmp_path = rig
     store.set_setting("role_skill", "")
     await launch(rig)
-    assert substrate.spawned[-1].spec.initial_prompt is None
+    assert substrate.spawned[-1].spec.initial_prompt == "Reply with exactly: Ready."
 
     manager.set_model("workstream", "gpt-5.6-luna")
     await launch(rig)
-    assert substrate.spawned[-1].spec.initial_prompt is None
+    assert substrate.spawned[-1].spec.initial_prompt == "Reply with exactly: Ready."
 
     manager2 = WorkstreamManager(  # engine survives a restart via the row
         substrate,

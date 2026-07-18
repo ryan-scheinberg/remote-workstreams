@@ -3,8 +3,8 @@
 Hold a natural spoken conversation with a coding agent — Claude Code or OpenAI's
 Codex — while it does real agentic work.
 Your Mac runs everything — the audio pipeline, the sessions, the state. Your iPhone is
-a thin browser client reached over your own tailnet. No cloud infrastructure beyond
-the STT and TTS APIs; nothing between your phone and your Mac but Tailscale.
+a thin browser client reached over your own tailnet. Voice can use the free, on-device
+Moonshine stack, so nothing needs to leave your Mac except the tailnet connection.
 
 <p align="center">
   <img src="docs/phone-main.png" width="260" alt="The conversation, a live workstream card, and the action bar">
@@ -13,6 +13,28 @@ the STT and TTS APIs; nothing between your phone and your Mac but Tailscale.
   &nbsp;
   <img src="docs/phone-menu.png" width="260" alt="The engine and model picker">
 </p>
+
+## Documentation
+
+- [What this is and how it fits together](docs/README.md)
+- [Quickstart and local voice setup](docs/quickstart.md)
+- [Configuration reference](docs/configuration.md)
+- [Deployment, Mac service, and iPhone setup](docs/deployment.md)
+- [Development and testing](docs/development.md)
+- [Contributing and pull requests](CONTRIBUTING.md)
+
+## Docs update tag
+
+Docs last updated: `docs-2026-07-10-6`
+
+Docs audited through commit: `75506a7`
+
+This tag marks the last commit where `README.md` + `docs/` were audited/updated.
+
+- View changes since docs were last updated: `git log docs-2026-07-10-6..HEAD --oneline`
+- Diff docs vs current: `git diff docs-2026-07-10-6..HEAD -- README.md docs/`
+
+Update procedure: make the docs change in its own commit, update the audited commit above to the code revision being documented, then create an annotated `docs-YYYY-MM-DD` tag and push the commit and tag.
 
 The core design: **every model interaction is a real, interactive agent session**,
 living as a window in one tmux session on your Mac. Claude Code and Codex CLI are
@@ -88,7 +110,7 @@ without separate pairing.
 ```
 iPhone (Safari PWA) ──WebSocket/HTTPS over Tailscale──> Mac
                                                          ├─ FastAPI service (launchd, persistent)
-                                                         │   ├─ Audio pipeline: Deepgram STT ⇄ VAD ⇄ Cartesia TTS
+                                                         │   ├─ Audio pipeline: Moonshine or Deepgram ⇄ VAD ⇄ Moonshine or Cartesia
                                                          │   ├─ tmux session "voice": convo + workstream
                                                          │   │    sessions — Claude Code or Codex CLI
                                                          │   │    (attach from any terminal)
@@ -103,8 +125,10 @@ iPhone (Safari PWA) ──WebSocket/HTTPS over Tailscale──> Mac
 - A Mac that stays on (the service runs under launchd), with
   [uv](https://docs.astral.sh/uv/) and [tmux](https://github.com/tmux/tmux)
 - A [Tailscale](https://tailscale.com) account, with the Mac and iPhone on the same tailnet
-- API keys: [Deepgram](https://console.deepgram.com) (streaming STT),
-  [Cartesia](https://play.cartesia.ai) (streaming TTS)
+- For fully local voice: the `moonshine-voice` package and its downloaded models
+  (installed with `uv sync --extra local-voice`); no voice API keys are needed.
+- Optional cloud voice: [Deepgram](https://console.deepgram.com) (streaming STT) and
+  [Cartesia](https://play.cartesia.ai) (streaming TTS), stored in the macOS Keychain.
 - At least one coding agent CLI on the Mac, logged in:
   [Claude Code](https://claude.com/claude-code) and/or
   [Codex CLI](https://developers.openai.com/codex). Either alone is a complete
@@ -189,7 +213,7 @@ uvx ruff check .   # lint
 
 | Path | What it is |
 |---|---|
-| `remote_workstreams/substrate.py` | tmux substrate — spawn/inject/kill Claude Code and Codex sessions as windows |
+| `remote_workstreams/substrate.py` | tmux substrate — spawn/inject/kill agent windows; invisible terminal clients preserve real TUI input semantics |
 | `remote_workstreams/transcript.py` | Claude Code transcript JSONL parsing (the only CC-format-aware module) |
 | `remote_workstreams/rollout.py` | Codex rollout JSONL parsing (the only Codex-format-aware module) |
 | `remote_workstreams/engines.py` | model ↔ engine registry — which models run on which CLI |

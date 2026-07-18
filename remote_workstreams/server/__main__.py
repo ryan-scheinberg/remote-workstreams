@@ -19,6 +19,8 @@ import uvicorn
 from remote_workstreams import keychain
 from remote_workstreams.adapters.cartesia_tts import CartesiaTTS
 from remote_workstreams.adapters.deepgram_stt import DeepgramSTT
+from remote_workstreams.adapters.moonshine_stt import MoonshineSTT
+from remote_workstreams.adapters.moonshine_tts import MoonshineTTS
 from remote_workstreams.audio.pipeline import AudioPipeline
 from remote_workstreams.bootstrap import ensure_convo, fresh_convo
 from remote_workstreams.config import Config
@@ -82,10 +84,23 @@ async def _serve() -> None:
     bridge = ConvoBridge(substrate, convo)
     bridge_task = asyncio.create_task(bridge.run())
 
-    def stt_factory() -> DeepgramSTT:
+    def stt_factory() -> DeepgramSTT | MoonshineSTT:
+        if config.stt_provider == "moonshine":
+            return MoonshineSTT(
+                language=config.moonshine_language,
+                model=config.moonshine_stt_model,
+                model_dir=config.moonshine_model_dir / "stt",
+            )
         return DeepgramSTT(api_key=_secret("deepgram-api-key"))
 
-    def tts_factory() -> CartesiaTTS:
+    def tts_factory() -> CartesiaTTS | MoonshineTTS:
+        if config.tts_provider == "moonshine":
+            return MoonshineTTS(
+                locale=config.moonshine_tts_locale,
+                voice=config.moonshine_tts_voice,
+                speed=config.moonshine_tts_speed,
+                model_dir=config.moonshine_model_dir / "tts",
+            )
         return CartesiaTTS(api_key=_secret("cartesia-api-key"))
 
     def pipeline_factory(stt, tts, convo_bridge, sink) -> AudioPipeline:
